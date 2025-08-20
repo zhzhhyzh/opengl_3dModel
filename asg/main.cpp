@@ -39,6 +39,8 @@ float txwhole = 0, tywhole = 0, tzwhole = 0; // translate whole body
 //Model Line
 // top of file with other globals
 bool showModelLines = false;   // press V to toggle (debug only)
+// movement key state (hold-to-move)
+bool gKeyW = false, gKeyA = false, gKeyS = false, gKeyD = false;
 
 
 //Lighting
@@ -61,6 +63,42 @@ float R_shoulder_yaw = -8.0f;
 float R_shoulder_pitch = -10.0f;
 float R_shoulder_roll = 0.0f;
 float R_elbow_flex = 10.0f;
+
+// ==== Walk system (facing + locomotion + gait) ====
+bool  gWalking = false;
+float gHeadingDeg = 0.0f;      // 0=front(+Z), 90=left(-X), -90=right(+X), 180=back(-Z)
+float gWalkSpeed = 1.6f;      // world units / sec
+float gWalkPhase = 0.0f;      // cycles the gait
+float gStepHz = 2.2f;      // steps per second (2.2 → brisk walk)
+float gArmAmpDeg = 26.0f;     // shoulder swing amplitude
+float gLegAmpDeg = 22.0f;     // hip swing amplitude
+
+static DWORD gLastTick = 0;      // for dt in action()
+
+// --- Off-hand (left) grip target, world space ---
+static bool  gOffhandActive = false;
+static float gOffhandTargetW[3] = { 0,0,0 };
+
+// column-major OpenGL helpers
+static inline void mulPointM4(const float M[16], const float p[3], float out[3]) {
+	out[0] = M[0] * p[0] + M[4] * p[1] + M[8] * p[2] + M[12];
+	out[1] = M[1] * p[0] + M[5] * p[1] + M[9] * p[2] + M[13];
+	out[2] = M[2] * p[0] + M[6] * p[1] + M[10] * p[2] + M[14];
+}
+// inverse for rigid (R|t) matrices (no non‑uniform scale)
+static inline void invRigidM4(const float M[16], float Inv[16]) {
+	// R^T
+	Inv[0] = M[0]; Inv[1] = M[4]; Inv[2] = M[8];
+	Inv[4] = M[1]; Inv[5] = M[5]; Inv[6] = M[9];
+	Inv[8] = M[2]; Inv[9] = M[6]; Inv[10] = M[10];
+	Inv[3] = Inv[7] = Inv[11] = 0.0f; Inv[15] = 1.0f;
+	// -R^T * t
+	float tx = M[12], ty = M[13], tz = M[14];
+	Inv[12] = -(Inv[0] * tx + Inv[4] * ty + Inv[8] * tz);
+	Inv[13] = -(Inv[1] * tx + Inv[5] * ty + Inv[9] * tz);
+	Inv[14] = -(Inv[2] * tx + Inv[6] * ty + Inv[10] * tz);
+}
+static inline float rad2deg(float r) { return r * 57.2957795f; }
 
 
 // ---- Reusable GLU quadric ----
@@ -119,6 +157,42 @@ GLuint loadTexture(LPCSTR filename) {
 
 	return texture;
 }
+// ===== Action pose offsets (added on top of walk pose) =====
+static float actTorsoPitch = 0, actTorsoYaw = 0, actTorsoRoll = 0;
+
+static float actRShoulderPitch = 0, actRShoulderYaw = 0, actRShoulderRoll = 0, actRElbowFlex = 0;
+static float actLShoulderPitch = 0, actLShoulderYaw = 0, actLShoulderRoll = 0, actLElbowFlex = 0;
+
+static float actHipPitchR = 0, actHipPitchL = 0;    // at the hips
+static float actKneeFlexR = 0, actKneeFlexL = 0;    // at the knees
+static inline float clamp01(float t) { return t < 0 ? 0 : t>1 ? 1 : t; }
+static inline float lerp(float a, float b, float t) { t = clamp01(t); return a + (b - a) * t; }
+static inline float easeInOut(float t) { t = clamp01(t); return t * t * (3.0f - 2.0f * t); } // smoothstep
+
+// ================== WEAPON STATE (Trident) ==================
+enum WeaponState { WPN_ON_BACK, WPN_IN_HAND, WPN_EQUIP_ANIM, WPN_Z_COMBO, WPN_X_CHARGING, WPN_X_SWEEP, WPN_C_WATERSKIM };
+static WeaponState gWpnState = WPN_ON_BACK;
+//static inline float lerp(float a, float b, float t) { if (t < 0)t = 0; if (t > 1)t = 1; return a + (b - a) * t; }
+
+static float gWpnTimer = 0.0f;       // general timer for staged moves
+static float gWpnCharge = 0.0f;      // 0..1 charge build for X
+static bool  gWpnKeyXDown = false;   // hold detection
+
+// very lightweight water trail (C): a ribbon of recent forward positions
+struct TrailPt { float x, y, z, life; };
+static std::vector<TrailPt> gWaterTrail;
+
+// forward decls
+static void drawTridentGeo();
+static void drawTridentHeld();     // draw at right‑hand local frame (hooked inside right arm)
+static void drawTridentOnBack();   // draw attached to back
+static void updateWeapon(float dt);
+
+// ---- Z‑combo jump control ----
+static const float GROUND_Y = 0.0f;  // your root default (keep if you use a different ground)
+static float zJumpStartY = 0.0f;     // cached when Z starts
+static bool  zImpactSpawned = false; // to spawn FX once
+static float gImpactTimer = 0.0f;    // ground shock FX
 
 
 LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -175,36 +249,57 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		break;
 	}
 
+	case WM_KEYUP:
+	{
+		if (wParam == 'W') gKeyW = false;
+		else if (wParam == 'A') gKeyA = false;
+		else if (wParam == 'S') gKeyS = false;
+		else if (wParam == 'D') gKeyD = false;
+		else if (wParam == 'X') { if (gWpnKeyXDown && gWpnState == WPN_X_CHARGING) { gWpnState = WPN_X_SWEEP; gWpnTimer = 0; } gWpnKeyXDown = false; }
+
+		// if no movement keys are down, stop walking
+		if (!(gKeyW || gKeyA || gKeyS || gKeyD)) {
+			gWalking = false;
+			// (optional) freeze the gait at a comfortable pose:
+			// gWalkPhase = 0.0f;
+		}
+		break;
+	}
+
+
 	case WM_KEYDOWN:
 		if (wParam == VK_ESCAPE) PostQuitMessage(0);
 		else if (wParam == VK_SPACE) {
-			/*prSpeed = 0.0;
-			ptX = 0.0;
-			ptY = 0.0;
-			ptZ = 0.0;
-			LUARotateX = 0.0;
-			LUARotateY = 0.0;
-			LUARotateZ = 0.0;
-			LLARotateX = 0.0;
-			LLARotateY = 0.0;
-			LLARotateZ = 0.0;
-			RUARotateX = 0.0;
-			RUARotateY = 0.0;
-			RUARotateZ = 0.0;
-			RLARotateX = 0.0;
-			RLARotateY = 0.0;
-			RLARotateZ = 0.0;
-			TogFinger = false;
-			TogWeapon = false;
-			TogOnWeapon = false;
-			Act1 = false;
-			Act2 = false;
-			Act3 = false;
-			Slash = false;
-			VSlash = false;
-			SwingFront = false;
-			resetleg();
-			txwhole = 6;*/
+			gHeadingDeg = 0;
+			rotateY = 0;
+			gWalking = false;
+			gKeyW = gKeyA = gKeyS = gKeyD = false;   // clear keys
+			xPosition = 0.0f; yPosition = 0.0f; zPosition = 0.05f;
+			gWalkPhase = 0.0f;
+			gWpnState = WPN_ON_BACK; gWpnTimer = 0.0f; gWpnCharge = 0.0f; gWaterTrail.clear(); gWpnKeyXDown = false;
+			actTorsoPitch = actTorsoYaw = actTorsoRoll = 0;
+			actRShoulderPitch = actRShoulderYaw = actRShoulderRoll = actRElbowFlex = 0;
+			actLShoulderPitch = actLShoulderYaw = actLShoulderRoll = actLElbowFlex = 0;
+			actHipPitchR = actHipPitchL = 0; actKneeFlexR = actKneeFlexL = 0;
+
+
+		}
+		// ... (other keys)
+		else if (wParam == 'W') {
+			gKeyW = true;
+			gHeadingDeg = 0.0f;   rotateY = 0.0f;   gWalking = true;
+		}
+		else if (wParam == 'A') {
+			gKeyA = true;
+			gHeadingDeg = 90.0f;  rotateY = -90.0f; gWalking = true;
+		}
+		else if (wParam == 'D') {
+			gKeyD = true;
+			gHeadingDeg = -90.0f; rotateY = 90.0f;  gWalking = true;
+		}
+		else if (wParam == 'S') {
+			gKeyS = true;
+			gHeadingDeg = 180.0f; rotateY = 180.0f; gWalking = true;
 		}
 	
 		else if (wParam == 'O')
@@ -218,73 +313,8 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			tx = 0, ty = 0, ptx = 0, pty = 0, prx = 0, pry = 0;
 			zoom = -7;
 		}
-		else if (wParam == 'A')              //move projection left
-		{
-			if (isOrtho)
-			{
-				if (ptx > -0.35)
-				{
-					ptx -= ptSpeed;
-				}
-			}
-			else
-			{
-				if (ptx > -0.8)
-				{
-					ptx -= ptSpeed;
-				}
-			}
-		}
-		else if (wParam == 'D')              //move projection right
-		{
-			if (isOrtho)
-			{
-				if (ptx < 0.35)
-				{
-					ptx += ptSpeed;
-				}
-			}
-			else
-			{
-				if (ptx < 0.8)
-				{
-					ptx += ptSpeed;
-				}
-			}
-		}
-		else if (wParam == 'W')              //move projection up
-		{
-			if (isOrtho)
-			{
-				if (pty < 0.35)
-				{
-					pty += ptSpeed;
-				}
-			}
-			else
-			{
-				if (pty < 0.8)
-				{
-					pty += ptSpeed;
-				}
-			}
-		}
-		else if (wParam == 'S')              //move projection down
-		{
-			if (isOrtho)
-			{
-				if (pty > -0.35)
-				{
-					pty -= ptSpeed;
-				}
-			}
-			else {
-				if (pty > -0.8)
-				{
-					pty -= ptSpeed;
-				}
-			}
-		}
+		
+
 		else if (wParam == 'T')              //move robot nearer to view
 		{
 			if (!isOrtho)
@@ -334,8 +364,21 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		else if (wParam == 'I') {
 			posD[2] += 0.06;
 		}
-		// inside WM_KEYDOWN
+	
 		else if (wParam == 'V') showModelLines = !showModelLines;
+		else if (wParam == 'B') { if (gWpnState == WPN_ON_BACK) { gWpnState = WPN_EQUIP_ANIM; gWpnTimer = 0; } else { gWpnState = WPN_ON_BACK; gWaterTrail.clear(); } }
+		else if (wParam == 'Z') {
+			if (gWpnState == WPN_IN_HAND) {
+				gWpnState = WPN_Z_COMBO;
+				gWpnTimer = 0.0f;
+				zJumpStartY = yPosition;   // <-- record current Y for the jump arc
+				zImpactSpawned = false;    // <-- we haven’t hit the ground yet
+				gImpactTimer = 0.0f;       // <-- reset shock ring FX
+			}
+		}
+
+		else if (wParam == 'X') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_X_CHARGING; gWpnTimer = 0; gWpnCharge = 0; gWpnKeyXDown = true; } }
+		else if (wParam == 'C') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_C_WATERSKIM; gWpnTimer = 0; gWaterTrail.clear(); } }
 
 		
 		break;
@@ -467,12 +510,345 @@ bool initPixelFormat(HDC hdc)
 		return false;
 	}
 }
+// Radial water‑splash shockwave (XZ ring + upward splash spikes)
+// `len` acts as the outer radius of the expanding ring.
+static void drawShockwave(float len) {
+	if (len < 0.0f) len = 0.0f;
+
+	const int   SEG = 72;            // ring smoothness
+	const float R1 = len;           // outer radius
+	const float R0 = (len > 0.22f) ? (len - 0.22f) : 0.0f;  // inner radius
+	const float Y = 0.02f;         // near‑ground height
+	const float A0 = 0.45f * (1.0f - fminf(len * 0.4f, 0.85f)); // fade as it grows
+
+	glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_LINE_BIT);
+	glDisable(GL_LIGHTING);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	// --- 1) Expanding circular ring on the ground (triangle strip) ---
+	glBegin(GL_TRIANGLE_STRIP);
+	for (int i = 0; i <= SEG; ++i) {
+		float t = (float)i / (float)SEG;
+		float th = t * 6.28318530718f; // 2π
+		float c = cosf(th), s = sinf(th);
+
+		glColor4f(0.70f, 0.88f, 1.0f, A0);        // inner edge (brighter)
+		glVertex3f(R0 * c, Y, R0 * s);
+
+		glColor4f(0.70f, 0.88f, 1.0f, A0 * 0.15f); // outer edge (fade out)
+		glVertex3f(R1 * c, Y, R1 * s);
+	}
+	glEnd();
+
+	// --- 2) Short upward splash “crowns” around the ring (tri wedges) ---
+	// uses a little noise with sin/cos so it wiggles as `len` changes
+	glBegin(GL_TRIANGLES);
+	const int SPIKES = 24;
+	for (int i = 0; i < SPIKES; ++i) {
+		float t = (float)i / (float)SPIKES;
+		float th = t * 6.28318530718f;
+		float c = cosf(th), s = sinf(th);
+
+		float r = 0.5f * (R0 + R1);               // base radius for spike
+		float h = 0.35f + 0.55f * (0.5f + 0.5f * sinf(7.0f * th + len * 6.0f));
+		float w = 0.08f + 0.04f * cosf(5.0f * th); // small varying width
+		float aSp = A0 * 0.75f;
+
+		glColor4f(0.75f, 0.92f, 1.0f, aSp);
+		glVertex3f((r - w) * c, Y, (r - w) * s);   // base left
+		glVertex3f((r + w) * c, Y, (r + w) * s);   // base right
+		glColor4f(0.75f, 0.92f, 1.0f, aSp * 0.85f);
+		glVertex3f(r * c, h, r * s);               // tip up
+	}
+	glEnd();
+
+	glPopAttrib();
+}
+
+
+static void renderWaterTrail() {
+	if (gWaterTrail.empty()) return;
+	glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT);
+	glDisable(GL_LIGHTING); glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glBegin(GL_QUAD_STRIP);
+	for (auto& p : gWaterTrail) {
+		float a = (p.life < 0 ? 0 : p.life); if (a > 1)a = 1;
+		glColor4f(0.35f, 0.65f, 1.0f, 0.30f * a);
+		glVertex3f(p.x - 0.22f, p.y, p.z);
+		glVertex3f(p.x + 0.22f, p.y, p.z);
+	}
+	glEnd();
+	glPopAttrib();
+}
+
+
+
+
+
+
+// call this from updateWeapon(dt) after you advance gWpnTimer etc.
+static void computeActionPose()
+{
+	// reset to neutral each frame
+	actTorsoPitch = actTorsoYaw = actTorsoRoll = 0;
+	actRShoulderPitch = actRShoulderYaw = actRShoulderRoll = actRElbowFlex = 0;
+	actLShoulderPitch = actLShoulderYaw = actLShoulderRoll = actLElbowFlex = 0;
+	actHipPitchR = actHipPitchL = 0;
+	actKneeFlexR = actKneeFlexL = 0;
+
+	// ===== Z : Raise -> Up thrust -> Down chop (0.75s)
+	if (gWpnState == WPN_Z_COMBO) {
+		float t = gWpnTimer;
+
+		const float tPrep = 0.18f, tRise = 0.28f, tHang = 0.98f, tFall = 0.30f;
+		float wPrep = clamp01(t / tPrep);
+		float wRise = clamp01((t - tPrep) / tRise);
+		float wHang = clamp01((t - tPrep - tRise) / tHang);
+		float wFall = clamp01((t - tPrep - tRise - tHang) / tFall);
+
+		// --- Crouch anticipation ---
+		if (t < tPrep) {
+			actTorsoPitch += lerp(0, +10, wPrep);
+			actHipPitchL += lerp(0, +6, wPrep);
+			actHipPitchR += lerp(0, +6, wPrep);
+			actKneeFlexL += lerp(0, +14, wPrep);
+			actKneeFlexR += lerp(0, +14, wPrep);
+
+			actRShoulderPitch += lerp(0, +18, wPrep);   // wind‑up
+			actRElbowFlex += lerp(0, +10, wPrep);
+			actLShoulderPitch += -lerp(0, 18, wPrep);
+			return;
+		}
+
+		// --- Ascend: spear rises to ear height ---
+		if (t < tPrep + tRise) {
+			float u = (t - tPrep) / tRise;
+			// stronger raise
+			actRShoulderPitch += lerp(+18, +620, u);   // was ~40
+			actRElbowFlex += lerp(+10, +16, u);
+
+			//// Left arm mirrors to keep the two‑hand grip
+			//actLShoulderPitch += lerp(-12, +540, u);
+			//actLElbowFlex += lerp(+8, +14, u);
+			return;
+		}
+		// --- Hang (by the ear) ---
+		if (t < tPrep + tRise + tHang) {
+			actRShoulderPitch -= 62.0f;
+			actRElbowFlex -= 16.0f;
+			actLShoulderPitch -= 27.0f;
+			actLElbowFlex -= 7.0f;
+			return;
+		}
+		// --- Fall: big chop ---
+		{
+			float u = (t - (tPrep + tRise + tHang)) / tFall;
+			float s = easeInOut(u);
+			actRShoulderPitch -= lerp(+20, +110, s);   // deeper chop
+			actRElbowFlex += lerp(8, +28, s);
+			actLShoulderPitch += lerp(+12, +95, s);   // off‑hand follows through
+			actLElbowFlex += lerp(6, +26, s);
+			// torso & legs unchanged (your shock ring still fires near landing)
+			actTorsoPitch += lerp(4, +20, s);  // lean into the slam
+			actHipPitchL += lerp(0, +8, s);
+			actHipPitchR += lerp(0, +6, s);
+			actKneeFlexL += lerp(12, +22, s);  // landing bend
+			actKneeFlexR += lerp(12, +18, s);
+			return;
+		}
+
+
+		
+	}
+
+	// ===== X : Charge (hold) then Sweep (release)
+	if (gWpnState == WPN_X_CHARGING) {
+		float t = easeInOut(fmodf(gWpnTimer, 0.35f) / 0.35f);        // small loop while charging
+		float trem = (sinf(gWpnTimer * 20.0f) * 0.5f + 0.5f);            // tremble 0..1
+
+		actRShoulderPitch -= -22.0f;      // draw back
+		actRShoulderYaw += 30.0f;
+		actRElbowFlex -= 22.0f + 4.0f * t;
+
+		actLShoulderPitch -= 14.0f;      // left hand forward a bit
+		actLElbowFlex -= 10.0f;
+
+		//actTorsoPitch += 8.0f;       // crouch
+		//actTorsoYaw += 6.0f * t;
+		//actKneeFlexL += 14.0f + 4.0f * t;
+		//actKneeFlexR += 14.0f + 4.0f * (1.0f - t);
+
+		// tiny shake
+		actRShoulderRoll += 3.0f * sinf(gWpnTimer * 18.0f);
+		return;
+	}
+	if (gWpnState == WPN_X_SWEEP) {
+		// 0..0.28s sweep left->right with torso twist
+		float t = clamp01(gWpnTimer / 0.28f);
+		float s = easeInOut(t);
+		//actTorsoYaw += lerp(-22, +22, s);
+		actTorsoPitch += +6.0f * (1.0f - s);
+		actRShoulderYaw -= lerp(-20, -400, s);
+		actRShoulderPitch += lerp(-20, -50, s);
+		actRElbowFlex += lerp(10, -4, s);
+		actLShoulderPitch += lerp(-8, +10, s);
+		// plant legs + recoil at end
+		/*actKneeFlexL += lerp(12, 16, s);
+		actKneeFlexR += lerp(12, 10, s);*/
+		return;
+	}
+
+	// ===== C : Water Skimming — back & forth slashes while stepping
+	if (gWpnState == WPN_C_WATERSKIM) {
+		float t = gWpnTimer;              // seconds
+		float swing = sinf(t * 9.0f);       // fast lateral
+		actTorsoYaw += 14.0f * swing;
+		actRShoulderYaw += 26.0f * swing;
+		actRShoulderPitch += 10.0f;
+		actRElbowFlex += 16.0f;
+		actLShoulderPitch += -12.0f * swing;
+		// light stepping stance
+		actHipPitchL += 8.0f;
+		actHipPitchR += 6.0f;
+		actKneeFlexL += 10.0f + 4.0f * (swing > 0 ? swing : 0);
+		actKneeFlexR += 10.0f + 4.0f * (swing < 0 ? -swing : 0);
+		return;
+	}
+}
+
+static void updateWeapon(float dt) {
+	// Equip pop
+	if (gWpnState == WPN_EQUIP_ANIM) { gWpnTimer += dt; if (gWpnTimer > 0.20f) { gWpnState = WPN_IN_HAND; gWpnTimer = 0; } return; }
+	// ===== Z : Jump → Up‑thrust → Down‑slam =====
+	if (gWpnState == WPN_Z_COMBO) {
+		gWpnTimer += dt;
+
+		// timeline
+		const float tPrep = 0.18f;  // crouch
+		const float tRise = 0.28f;  // jump up
+		const float tHang = 0.18f;  // short hang
+		const float tFall = 0.30f;  // fast drop + slam
+		const float T = tPrep + tRise + tHang + tFall;
+
+		float t = gWpnTimer;
+		float Y = zJumpStartY;
+
+		if (t < tPrep) {
+			// crouch (dip a bit)
+			Y = zJumpStartY - lerp(0.0f, 0.22f, t / tPrep);
+		}
+		else if (t < tPrep + tRise) {
+			// rise (accelerating up)
+			float u = (t - tPrep) / tRise;    // 0..1
+			Y = zJumpStartY - 0.22f + lerp(0.0f, 1.85f, u * u);
+		}
+		else if (t < tPrep + tRise + tHang) {
+			// brief apex
+			Y = zJumpStartY + 1.63f;
+		}
+		else if (t < T) {
+			// fall quickly
+			float u = (t - (tPrep + tRise + tHang)) / tFall;   // 0..1
+			Y = zJumpStartY + 1.63f - lerp(0.0f, 1.75f, u * u);
+
+			// near the end → spawn impact once
+			if (u > 0.92f && !zImpactSpawned) {
+				zImpactSpawned = true;
+				gImpactTimer = 0.28f;    // show shock ring
+			}
+		}
+		else {
+			// land & finish
+			yPosition = GROUND_Y;
+			gWpnState = WPN_IN_HAND;
+			gWpnTimer = 0.0f;
+			zImpactSpawned = false;
+			computeActionPose();         // clears to idle pose
+			return;
+		}
+
+		yPosition = Y;
+		computeActionPose();             // produce limb/torso pose for this frame
+		return;
+	}
+
+	// X
+	if (gWpnState == WPN_X_CHARGING) { gWpnTimer += dt; gWpnCharge = min(1.0f, gWpnCharge + dt * 1.2f); return; }
+	if (gWpnState == WPN_X_SWEEP) { gWpnTimer += dt; if (gWpnTimer > 0.58f) { gWpnState = WPN_IN_HAND; gWpnTimer = 0; gWpnCharge = 0; } return; }
+	// C
+	if (gWpnState == WPN_C_WATERSKIM) {
+		gWpnTimer += dt;
+		// trail point in front of character
+		TrailPt tp; tp.x = xPosition; tp.y = yPosition + 0.6f; tp.z = zPosition + 0.9f; tp.life = 1.0f;
+		gWaterTrail.push_back(tp);
+		for (auto& p : gWaterTrail) p.life -= dt * 1.4f;
+		while (!gWaterTrail.empty() && gWaterTrail.front().life <= 0) gWaterTrail.erase(gWaterTrail.begin());
+		if (gWpnTimer > 0.80f) { gWpnState = WPN_IN_HAND; gWpnTimer = 0; }
+		return;
+	}
+}
+
+static void drawGroundImpactRing() {
+	if (gImpactTimer <= 0.0f) return;
+	float t = 1.0f - clamp01(gImpactTimer / 0.28f);   // 0..1
+	float R0 = 0.2f + 0.6f * t;
+	float R1 = R0 + 0.10f;
+
+	glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT);
+	glDisable(GL_LIGHTING); glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glColor4f(0.65f, 0.80f, 1.0f, 0.45f * (1.0f - t));
+
+	// flat ring on ground (tri strip)
+	glPushMatrix();
+	glTranslatef(xPosition, GROUND_Y, zPosition + 5.6f);   // a tad in front of feet
+	glRotatef(rotateY + actTorsoYaw, 0, 1, 0);
+
+	const int seg = 48;
+	glBegin(GL_TRIANGLE_STRIP);
+	for (int i = 0;i <= seg;++i) {
+		float a = (float)i / seg * 6.2831853f;
+		float c = cosf(a), s = sinf(a);
+		glVertex3f(R0 * c, 0.01f, R0 * s);
+		glVertex3f(R1 * c, 0.01f, R1 * s);
+	}
+	glEnd();
+	glPopMatrix();
+	glPopAttrib();
+}
+
 //--------------------------------------------------------------------
 void action() {
-	
+	// --- dt in seconds ---
+	DWORD now = GetTickCount();
+	if (gLastTick == 0) gLastTick = now;
+	float dt = (now - gLastTick) * (1.0f / 1000.0f);
+	gLastTick = now;
+
+	// --- advance gait & translate root when walking ---
+	if (gWalking) {
+		gWalkPhase += 2.0f * 3.14159265f * gStepHz * dt;  // radians
+
+			float yaw = gHeadingDeg * 3.14159265f / 180.0f;
+			float vx = -sinf(yaw);
+			float vz = cosf(yaw);
+			xPosition += vx * gWalkSpeed * dt;
+			zPosition += vz * gWalkSpeed * dt;
+	}
+
+	updateWeapon(dt);
+	if (gImpactTimer > 0.0f) {
+		gImpactTimer -= dt;
+		if (gImpactTimer < 0.0f) gImpactTimer = 0.0f;
+	}
+
+	computeActionPose();   // produces the act* pose numbers every frame
 
 
 }
+
 struct EllipseProfile {
 	// y in [0..1] (normalized height), a = half-width (X), b = half-depth (Z), in world units
 	float y, a, b;
@@ -686,7 +1062,7 @@ static void drawEllipseOutlineXY(float rx, float ry, float zOffset, int seg = 42
 
 void body() {
 	// Pick your light skin preset:
-	const SkinPreset SKIN = SKIN_FAIR_NEUTRAL; // or SKIN_FAIR_ROSY / SKIN_LIGHT_TAN
+	const SkinPreset SKIN = SKIN_LIGHT_TAN; // or SKIN_FAIR_ROSY / SKIN_LIGHT_TAN
 
 	applySkinMaterial(SKIN.base);
 	// If you're relying on glColor, keep it white so material color shows:
@@ -720,10 +1096,10 @@ void body() {
 	// Position so hips sit near your “golden belt” height.
 	// Your belt center is around y≈0.2..0.5; adjust as you like.
 	glTranslatef(0.0f, 0.0f, 0.0f);
+	glColor3f(SKIN_LIGHT_TAN.base[0],
+		SKIN_LIGHT_TAN.base[1],
+		SKIN_LIGHT_TAN.base[2]);
 
-	// Material (skin-ish), then outline if you like
-	glColor3f(0.90f, 0.70f, 0.65f);
-	glDisable(GL_TEXTURE_2D);       // ensure not textured
 	//glEnable(GL_LIGHTING);          // shaded
 	drawLoftedBody(TORSO, TORSO_N, /*height*/6.2f, /*slices*/72);
 
@@ -763,8 +1139,7 @@ void body() {
 		glEnd();
 	}
 
-	// Colors
-	const float skinR = 0.90f, skinG = 0.70f, skinB = 0.65f;
+
 
 	// Reuse the same TORSO[] you already created above in body()
 
@@ -791,7 +1166,9 @@ void body() {
 
 		glPushMatrix();
 		glTranslatef(x, y, z);
-		glColor3f(skinR, skinG, skinB);
+		glColor3f(SKIN_FAIR_NEUTRAL.base[0],
+			SKIN_FAIR_NEUTRAL.base[1],
+			SKIN_FAIR_NEUTRAL.base[2]);
 		//glEnable(GL_LIGHTING);
 		drawEllipsoid(d.w, d.h, d.depth, 24);
 
@@ -821,7 +1198,9 @@ void body() {
 		float z = b * 0.995f;                  // almost on the surface
 		glPushMatrix();
 		glTranslatef(0.0f, y, z);
-		glColor3f(skinR, skinG, skinB);
+		glColor3f(SKIN_FAIR_NEUTRAL.base[0],
+			SKIN_FAIR_NEUTRAL.base[1],
+			SKIN_FAIR_NEUTRAL.base[2]);
 		drawEllipsoid(0.08f, 0.06f, 0.03f, 12);
 		glPopMatrix();
 	}
@@ -845,7 +1224,9 @@ void body() {
 		glPushMatrix();
 		glTranslatef(-a_at * 0.95f, y, b_at * 0.25f);  // slightly forward
 		glRotatef(20.0f, 0, 1, 0);
-		glColor3f(skinR, skinG, skinB);
+		glColor3f(SKIN_LIGHT_TAN.base[0],
+			SKIN_LIGHT_TAN.base[1],
+			SKIN_LIGHT_TAN.base[2]);
 		drawEllipsoid(0.55f, 0.65f, 0.45f, 28);
 		glPopMatrix();
 
@@ -853,7 +1234,9 @@ void body() {
 		glPushMatrix();
 		glTranslatef(+a_at * 0.95f, y, b_at * 0.25f);
 		glRotatef(-20.0f, 0, 1, 0);
-		glColor3f(skinR, skinG, skinB);
+		glColor3f(SKIN_LIGHT_TAN.base[0],
+			SKIN_LIGHT_TAN.base[1],
+			SKIN_LIGHT_TAN.base[2]);
 		drawEllipsoid(0.55f, 0.65f, 0.45f, 28);
 		glPopMatrix();
 	}
@@ -881,7 +1264,7 @@ void body() {
 		float a = sampleHalfWidthA(TORSO, TORSO_N, L.yn);
 		float b = sampleHalfDepthB(TORSO, TORSO_N, L.yn);
 		float y = L.yn * BODY_H + L.lift;
-		float x = L.xsign * (a * 0.68f);     // reach ~68% of half-width → more lateral coverage
+		float x = L.xsign * (a * 0.48f);     // reach ~68% of half-width → more lateral coverage
 		float z = b * 0.95f + L.fwd;         // hug surface, slight outward bias
 
 		glPushMatrix();
@@ -889,7 +1272,9 @@ void body() {
 		glRotatef(L.tiltY * L.xsign, 0, 1, 0); // mirror yaw per side
 		// Flatten slightly in Z and spread in X to avoid “short ovals”
 		glScalef(0.8f, 0.90f, 0.80f);
-		setSkin(0.90f, 0.70f, 0.65f);
+		setSkin(SKIN_FAIR_NEUTRAL.base[0],
+			SKIN_FAIR_NEUTRAL.base[1],
+			SKIN_FAIR_NEUTRAL.base[2]);
 		drawEllipsoid(L.w, L.h, L.d, 36);
 		if (showModelLines) {
 			GLboolean wasLit = glIsEnabled(GL_LIGHTING);
@@ -921,7 +1306,7 @@ void body() {
 		float yn = 0.575f + i * 0.018f;
 		float b = sampleHalfDepthB(TORSO, TORSO_N, yn);
 		float y = yn * BODY_H;
-		float z = b * 0.975f;
+		float z = b * 1;
 		glPushMatrix();
 		glTranslatef(0.0f, y, z);
 		setSkin(0.85f, 0.65f, 0.60f);               // slightly darker
@@ -939,7 +1324,7 @@ void body() {
 		float yn = 0.545f + 0.035f * sinf(t * 3.14159f);
 		float a = sampleHalfWidthA(TORSO, TORSO_N, yn);
 		float b = sampleHalfDepthB(TORSO, TORSO_N, yn);
-		float x = (t - 0.5f) * 2.0f * (a * 0.95f);
+		float x = (t - 0.5f) * 2.0f * (a * 0.75f);
 		float y = yn * BODY_H;
 		float z = b * 0.94f;
 		glVertex3f(x, y, z);
@@ -958,7 +1343,7 @@ void body() {
 		float b = sampleHalfDepthB(TORSO, TORSO_N, yn);
 		float x = (side < 0 ? -1.0f : 1.0f) * (a * N.xratio);
 		float y = yn * BODY_H;
-		float z = b * 1.25f;
+		float z = b * 1.15f;
 
 		// Areola (flat-ish disk via very flat ellipsoid)
 		glPushMatrix();
@@ -984,6 +1369,7 @@ void body() {
 
 
 }
+
 
 // ============================
 // ARM MODULE (natural + mirrored)
@@ -1095,90 +1481,379 @@ static void pushDarken(float k = 0.96f) {
 
 // --- Helper: know if lighting is on (to choose glColor vs material) ---
 static inline bool lightingEnabled() { return glIsEnabled(GL_LIGHTING) == GL_TRUE; }
+// ===== Helpers (only GL_QUADS / GL_TRIANGLES) =====
+static inline void nrm(float x, float y, float z) { glNormal3f(x, y, z); }
 
-// === FINGER (3 segments, natural curl) ===
-static void drawFingerSegmented(float scale = 1.0f,
-	float curl1 = 20, float curl2 = 25, float curl3 = 15) {
+// Axis‑aligned box centered at origin
+static void quadBox(float w, float h, float d) {
+	const float x = w * 0.5f, y = h * 0.5f, z = d * 0.5f;
+	glBegin(GL_QUADS);
+	// +Z
+	nrm(0, 0, 1);  glVertex3f(-x, -y, z); glVertex3f(x, -y, z); glVertex3f(x, y, z); glVertex3f(-x, y, z);
+	// -Z
+	nrm(0, 0, -1); glVertex3f(x, -y, -z); glVertex3f(-x, -y, -z); glVertex3f(-x, y, -z); glVertex3f(x, y, -z);
+	// +X
+	nrm(1, 0, 0);  glVertex3f(x, -y, z); glVertex3f(x, -y, -z); glVertex3f(x, y, -z); glVertex3f(x, y, z);
+	// -X
+	nrm(-1, 0, 0); glVertex3f(-x, -y, -z); glVertex3f(-x, -y, z); glVertex3f(-x, y, z); glVertex3f(-x, y, -z);
+	// +Y
+	nrm(0, 1, 0);  glVertex3f(-x, y, z); glVertex3f(x, y, z); glVertex3f(x, y, -z); glVertex3f(-x, y, -z);
+	// -Y
+	nrm(0, -1, 0); glVertex3f(-x, -y, -z); glVertex3f(x, -y, -z); glVertex3f(x, -y, z); glVertex3f(-x, -y, z);
+	glEnd();
+}
 
+static inline void setGold() { glColor3f(0.95f, 0.82f, 0.30f); }
+static inline void setSteel() { glColor3f(0.85f, 0.90f, 0.95f); }
+static inline void setBlue() { glColor3f(0.20f, 0.30f, 0.85f); }
+static inline void setRuby() { glColor3f(0.85f, 0.10f, 0.10f); }
+// ================== Trident attached to back ==================
 
-	// proportions
-	const float L1 = 0.45f * scale;  // proximal
-	const float L2 = 0.40f * scale;  // middle
-	const float L3 = 0.35f * scale;  // distal
-	const float R1 = 0.11f * scale;
-	const float R2 = 0.095f * scale;
-	const float R3 = 0.085f * scale;
+// ===== Trident colors =====
+static inline void colGold() { glColor3f(0.92f, 0.78f, 0.25f); }
+static inline void colSteel() { glColor3f(0.78f, 0.82f, 0.88f); }
+static inline void colBlue() { glColor3f(0.18f, 0.28f, 0.65f); }
+static inline void colLeather() { glColor3f(0.40f, 0.28f, 0.18f); }
+static inline void colGem() { glColor3f(0.08f, 0.25f, 0.85f); }
 
-	// proximal
-	drawCapsuleDownY(R1, R1 * 0.9f, L1);
-	glTranslatef(0, -L1, 0);
-	glRotatef(curl1, 1, 0, 0);
+// simple box (you already have quadBox) + thin wedge tip
+static void triWedgeTip(float w, float h, float d) {
+	// a little pyramid-ish point with triangles
+	const float x = w * 0.5f, y = h * 0.5f, z = d * 0.5f;
+	glBegin(GL_TRIANGLES);
+	// front
+	glNormal3f(0, 0, 1); glVertex3f(-x, y, z); glVertex3f(x, y, z); glVertex3f(0, -y, z);
+	// back
+	glNormal3f(0, 0, -1); glVertex3f(x, y, -z); glVertex3f(-x, y, -z); glVertex3f(0, -y, -z);
+	// left
+	glNormal3f(-1, 0, 0); glVertex3f(-x, y, -z); glVertex3f(-x, y, z); glVertex3f(0, -y, 0);
+	// right
+	glNormal3f(1, 0, 0); glVertex3f(x, y, z); glVertex3f(x, y, -z); glVertex3f(0, -y, 0);
+	glEnd();
+}
 
-	// middle
-	drawCapsuleDownY(R2, R2 * 0.9f, L2);
-	glTranslatef(0, -L2, 0);
-	glRotatef(curl2, 1, 0, 0);
-
-	// distal
-	drawCapsuleDownY(R3, R3 * 0.9f, L3);
-	glTranslatef(0, -L3, 0);
-	glRotatef(curl3, 1, 0, 0);
-
-	// fingertip pad
+// curvy side blade built from a few quads (approx. the reference shape)
+static void sideBladePatch(float sign, float L = 1.6f) {
+	// sign: -1 = left, +1 = right
 	glPushMatrix();
-	glTranslatef(0, 0.3, 0);
-	glScalef(1.0f, 0.9f, 0.85f);
-	drawSphere(R3 * 0.9f, 12, 12);
+	glScalef(sign, 1, 1);
+	// 3 curved sections going outward, forward, then down
+	struct Seg { float yaw, roll, len, w0, w1, t; };
+	Seg segs[] = {
+		{  25,  0,  L * 0.36f, 0.22f, 0.18f, 0.16f },
+		{ -18, 10,  L * 0.34f, 0.18f, 0.16f, 0.14f },
+		{ -35,-10,  L * 0.42f, 0.16f, 0.06f, 0.10f }
+	};
+	for (auto& s : segs) {
+		glRotatef(s.yaw, 0, 1, 0);
+		glRotatef(s.roll, 0, 0, 1);
+		colSteel();
+		// segment body
+		glBegin(GL_QUADS);
+		float w0 = s.w0 * 0.5f, w1 = s.w1 * 0.5f, t = s.t * 0.5f;
+		// +Z face
+		glNormal3f(0, 0, 1);
+		glVertex3f(-w0, 0, t); glVertex3f(w0, 0, t);
+		glVertex3f(w1, -s.len, t); glVertex3f(-w1, -s.len, t);
+		// -Z face
+		glNormal3f(0, 0, -1);
+		glVertex3f(w0, 0, -t); glVertex3f(-w0, 0, -t);
+		glVertex3f(-w1, -s.len, -t); glVertex3f(w1, -s.len, -t);
+		// +X
+		glNormal3f(1, 0, 0);
+		glVertex3f(w0, 0, t); glVertex3f(w0, 0, -t);
+		glVertex3f(w1, -s.len, -t); glVertex3f(w1, -s.len, t);
+		// -X
+		glNormal3f(-1, 0, 0);
+		glVertex3f(-w0, 0, -t); glVertex3f(-w0, 0, t);
+		glVertex3f(-w1, -s.len, t); glVertex3f(-w1, -s.len, -t);
+		glEnd();
+		// tiny tip at the end of last segment
+		glTranslatef(0, -s.len, 0);
+	}
+	triWedgeTip(0.10f, 0.30f, 0.08f);
 	glPopMatrix();
 }
 
-// === HAND (palm + 4 fingers + thumb) ===
-static void drawHandNatural(int side /* -1 left, +1 right */) {
-	const SkinPreset& SKIN = SKIN_LIGHT_TAN;         // light tan, as requested
-	applySkinMaterial(SKIN.base);                    // ambient/diffuse/specular
-	glEnable(GL_NORMALIZE);                          // safe normals after scales
-	glDisable(GL_TEXTURE_2D);                        // no textures on skin
-
-	if (glIsEnabled(GL_LIGHTING)) {
-		glColor3f(1.0f, 1.0f, 1.0f);                // let material color show
-	}
-	else {
-		glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);  // flat skin tone
-	}
-
-	const float PALM_W = 0.9f;
-	const float PALM_H = 0.6f;
-	const float PALM_T = 0.35f;
-
-	// Palm block
+// Central long spear head
+static void centerSpear(float L) {
 	glPushMatrix();
-	glScalef(PALM_T, PALM_H * 0.4f, PALM_W * 0.6f);
-	drawSphere(1.0f, 20, 20);
+	colSteel();
+	quadBox(0.28f, L * 0.70f, 0.22f);      // main shaft of spear head
+	glTranslatef(0, -L * 0.35f, 0);
+	triWedgeTip(0.22f, L * 0.35f, 0.18f);  // sharp tip
+	glPopMatrix();
+}
+
+// ===== Improved trident (takes a length scale) =====
+static void drawTridentGeo(float lengthScale = 1.0f) {
+	// Handle (longer by default)
+	const float handleH = 7.2f * lengthScale;   
+	glPushMatrix();
+	colBlue();  quadBox(0.22f, handleH, 0.22f);
+	// leather bands
+	glTranslatef(0, -handleH * 0.42f, 0);
+	for (int i = 0;i < 4;++i) {
+		glTranslatef(0, -0.18f, 0);
+		colLeather(); quadBox(0.26f, 0.10f, 0.26f);
+	}
 	glPopMatrix();
 
-	// Move to knuckle line
+	// Guard / gold collar + gem
+	glPushMatrix();
+	glTranslatef(0, +handleH * 0.50f, 0);
+	colGold(); quadBox(1.10f, 0.36f, 0.70f);
+	glTranslatef(0, +0.14f, 0);
+	colGem();  quadBox(0.2f, 0.22f, 0.22f);
+	glPopMatrix();
+
+	// Head: center spear + 2 big side blades + 2 small inner hooks
+	glPushMatrix();
+	glTranslatef(0, handleH * 0.50f + 0.60f, 0);
+	glRotatef(180, 1, 0, 0);
+	// center spear
+	centerSpear(2.2f * lengthScale);
+
+	// side big blades (curvy) — mirror
+	glPushMatrix(); glTranslatef(0.85f, 0.25f, 0); sideBladePatch(+1, 2.0f * lengthScale); glPopMatrix();
+	glPushMatrix(); glTranslatef(-0.85f, 0.25f, 0); sideBladePatch(-1, 2.0f * lengthScale); glPopMatrix();
+
+	// small inner hooks near collar
+	glPushMatrix(); glTranslatef(0.55f, 0.20f, 0); glRotatef(25, 0, 1, 0); quadBox(0.12f, 0.60f, 0.12f); glTranslatef(0, -0.30f, 0); triWedgeTip(0.10f, 0.22f, 0.10f); glPopMatrix();
+	glPushMatrix(); glTranslatef(-0.55f, 0.20f, 0); glRotatef(-25, 0, 1, 0); quadBox(0.12f, 0.60f, 0.12f); glTranslatef(0, -0.30f, 0); triWedgeTip(0.10f, 0.22f, 0.10f); glPopMatrix();
+
+	glPopMatrix();
+}
+
+static void drawTridentOnBack() {
+	const EllipseProfile* T; int TN; float BODY_H;
+	getTorsoProfile(T, TN, BODY_H);
+
+	float yn = 0.64f;                     // upper‑mid back
+	float a = sampleHalfWidthA(T, TN, yn);
+	float b = sampleHalfDepthB(T, TN, yn);
+	float y = yn * BODY_H;
+
+	glPushMatrix();
+	// start near left shoulder blade, slightly behind skin
+	glTranslatef(-a * 0.55f, y + 0.25f, -b * 1.10f);
+	// diagonal: top‑left → right‑hip
+	glRotatef(14.0f, 1, 0, 0);              // pitch
+	glRotatef(25.0f, 0, 1, 0);              // yaw down body
+	glRotatef(-58.0f, 0, 0, 1);              // roll diagonal
+	drawTridentGeo(/*lengthScale*/1.18f); // a bit longer on the back
+	glPopMatrix();
+}
+static void drawTridentHeldPose() {
+	glPushMatrix();
+	// grip point ~lower third
+	glTranslatef(0.0f, -0.28f, 0.0f);
+	// lay along forward (+Z) from the hand
+	glRotatef(+90.0f, 1, 0, 0);
+	glRotatef(+8.0f, 0, 0, 1);
+
+	// === add motion by state ===
+	if (gWpnState == WPN_Z_COMBO) {
+		float t = gWpnTimer;
+		const float tPrep = 0.18f, tRise = 0.28f, tHang = 0.18f, tFall = 0.30f;
+
+		if (t < tPrep) {
+			glRotatef(lerp(0, +22, t / tPrep), 1, 0, 0);       // preload
+		}
+		else if (t < tPrep + tRise) {
+			float u = (t - tPrep) / tRise;
+			glRotatef(lerp(+22, +60, u), 1, 0, 0);   // up by face/ear
+		}
+		else if (t < tPrep + tRise + tHang) {
+			glRotatef(60, 1, 0, 0);
+		}
+		else { // slam
+			float u = (t - (tPrep + tRise + tHang)) / tFall;
+			glRotatef(lerp(+10, +110, easeInOut(u)), 1, 0, 0);
+		}
+
+
+	}
+	else if (gWpnState == WPN_X_CHARGING) {
+		// slight tremble + glow length implied elsewhere
+		glRotatef(6.0f * sinf(gWpnTimer * 22.0f), 0, 0, 1);
+	}
+	else if (gWpnState == WPN_X_SWEEP) {
+		// wide horizontal sweep
+		glRotatef(lerp(-45, +45, gWpnTimer / 0.28f), 0, 1, 0);
+	}
+	else if (gWpnState == WPN_C_WATERSKIM) {
+		// back‑and‑forth short swings
+		glRotatef(28.0f * sinf(gWpnTimer * 9.0f), 0, 1, 0);
+	}
+	// ... existing rotations that orient the weapon in the right hand ...
+
+	GLfloat M[16]; glGetFloatv(GL_MODELVIEW_MATRIX, M);
+	float leftGripLocal[3] = { 0.0f, 0.0f, 1.15f };  // along local +Z from the right-hand grip
+	mulPointM4(M, leftGripLocal, gOffhandTargetW);
+	gOffhandActive = true;
+
+	// draw the actual weapon
+	drawTridentGeo(/*lengthScale*/1.15f);
+
+	drawTridentGeo(/*lengthScale*/1.15f);
+	glPopMatrix();
+}
+
+
+static void tridentBlade(float L, float W, float T) {
+	// center spike
+	glPushMatrix();
+	setSteel();
+	quadBox(W * 0.28f, L, T);
+	// tip
+	glTranslatef(0, -L * 0.55f, 0);
+	glScalef(1.0f, 0.45f, 1.0f);
+	quadBox(W * 0.20f, L * 0.45f, T * 0.9f);
+	glPopMatrix();
+
+	// side tines (left/right)
+	for (int s = -1;s <= 1;s += 2) {
+		glPushMatrix();
+		glTranslatef(s * W * 0.55f, 0, 0);
+		glRotatef(s * 8.0f, 0, 0, 1);
+		setSteel();
+		quadBox(W * 0.22f, L * 0.85f, T * 0.9f);
+		glTranslatef(0, -L * 0.48f, 0);
+		quadBox(W * 0.16f, L * 0.35f, T * 0.8f);
+		glPopMatrix();
+	}
+}
+
+
+
+
+typedef void (*DrawFunc)();
+
+static void drawWireOverlay(DrawFunc func) {
+	glPushAttrib(GL_ENABLE_BIT | GL_POLYGON_BIT | GL_LINE_BIT);
+	glDisable(GL_LIGHTING);              // lines not shaded
+	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+	glEnable(GL_POLYGON_OFFSET_LINE);    // avoid z-fighting
+	glPolygonOffset(-1.0f, -1.0f);
+	glColor3f(0, 0, 0);                    // black wireframe lines
+
+	if (func) func();                    // call your draw function
+
+	glPopAttrib();
+}
+// A tapered “rect tube” finger segment along -Y
+static void quadFingerSegment(float w0, float w1, float depth, float L) {
+	const float x0 = w0 * 0.5f, x1 = w1 * 0.5f, z = depth * 0.5f;
+	const float y0 = 0.0f, y1 = -L;
+
+	glBegin(GL_QUADS);
+	// dorsal (+Z)
+	nrm(0, 0, 1);
+	glVertex3f(-x0, y0, z); glVertex3f(x0, y0, z); glVertex3f(x1, y1, z); glVertex3f(-x1, y1, z);
+	// palmar (-Z)
+	nrm(0, 0, -1);
+	glVertex3f(x0, y0, -z); glVertex3f(-x0, y0, -z); glVertex3f(-x1, y1, -z); glVertex3f(x1, y1, -z);
+	// radial (+X)
+	nrm(1, 0, 0);
+	glVertex3f(x0, y0, z); glVertex3f(x0, y0, -z); glVertex3f(x1, y1, -z); glVertex3f(x1, y1, z);
+	// ulnar (-X)
+	nrm(-1, 0, 0);
+	glVertex3f(-x0, y0, -z); glVertex3f(-x0, y0, z); glVertex3f(-x1, y1, z); glVertex3f(-x1, y1, -z);
+	glEnd();
+}
+
+// A simple triangular fingertip cap (both sides)
+static void triFingertip(float w, float depth) {
+	const float r = w * 0.5f, z = depth * 0.5f;
+	// dorsal (+Z)
+	glBegin(GL_TRIANGLES);
+	nrm(0, 0, 1);
+	glVertex3f(-r, 0, z); glVertex3f(r, 0, z); glVertex3f(0, r * 1.1f, z);
+	glEnd();
+	// palmar (-Z)
+	glBegin(GL_TRIANGLES);
+	nrm(0, 0, -1);
+	glVertex3f(r, 0, -z); glVertex3f(-r, 0, -z); glVertex3f(0, r * 1.1f, -z);
+	glEnd();
+}
+
+// ====== DROP‑IN REPLACEMENTS ======
+
+// === FINGER (3 segments, natural curl) ===
+static void drawFingerSegmented(float scale = 1.0f,
+	float curl1 = 20, float curl2 = 25, float curl3 = 15)
+{
+	const float L1 = 0.45f * scale;  // proximal
+	const float L2 = 0.40f * scale;  // middle
+	const float L3 = 0.35f * scale;  // distal
+
+	const float W1 = 0.22f * scale;  // widths (approx twice your R*)
+	const float W2 = 0.19f * scale;
+	const float W3 = 0.17f * scale;
+
+	const float D = 0.18f * scale;  // thickness
+
+	// Proximal
+	quadFingerSegment(W1, W2, D, L1);
+	glTranslatef(0, -L1, 0);
+	glRotatef(curl1, 1, 0, 0);
+
+	// Middle
+	quadFingerSegment(W2, W3, D * 0.95f, L2);
+	glTranslatef(0, -L2, 0);
+	glRotatef(curl2, 1, 0, 0);
+
+	// Distal
+	quadFingerSegment(W3, W3 * 0.9f, D * 0.9f, L3);
+	glTranslatef(0, -L3, 0);
+	glRotatef(curl3, 1, 0, 0);
+
+	// Tip
+	triFingertip(W3 * 0.9f, D * 0.85f);
+}
+
+// === HAND (palm + 4 fingers + thumb) ===
+static void drawHandNatural(int side /* -1 left, +1 right */)
+{
+	const float PALM_W = 0.90f;  // across knuckles (Z)
+	const float PALM_H = 0.60f;  // wrist->knuckles (Y)
+	const float PALM_T = 0.35f;  // thickness (X)
+
+	glEnable(GL_NORMALIZE);
+
+	// 1) Palm block (low‑poly)
+	glPushMatrix();
+	glTranslatef(0, -PALM_H * 0.2f, 0);
+	quadBox(PALM_T, PALM_H * 0.8f, PALM_W * 0.65f);
+	glPopMatrix();
+
+	// 2) Move to knuckle line (top of palm in your space)
 	glTranslatef(0, -PALM_H * 0.45f, 0);
 
-	// Four fingers
-	float zStart = -PALM_W * 0.45f;
-	float zStep = PALM_W * 0.3f;
-	for (int i = 0; i < 4; i++) {
-		float z = zStart + i * zStep;
-		float scale = 1.0f - 0.08f * i;  // shorter pinky
+	// 3) Fingers (index..pinky spaced along Z; pinky shorter)
+	const float zStart = -PALM_W * 0.45f;
+	const float zStep = PALM_W * 0.30f;
+
+	for (int i = 0;i < 4;++i) {
+		const float z = zStart + i * zStep;
+		const float scale = 1.0f - 0.08f * (3 - i); // longest: index->middle slight bias; tweak if you prefer
 		glPushMatrix();
 		glTranslatef(0, 0, z);
+		// tiny splay around Z to mimic ref
+		glRotatef(-6.0f + i * 4.0f, 0, 0, 1);
 		drawFingerSegmented(scale, 18 + 2 * i, 22 + i, 12 + i);
 		glPopMatrix();
 	}
 
-	// Thumb
+	// 4) Thumb mount (uses 'side' for left/right)
 	glPushMatrix();
-	glTranslatef(side * 0.1f, -PALM_H * 0.2f, -PALM_W * -0.2f);
-	glRotatef(side * -20.0f, 0, 0, 1);
+	glTranslatef(side * (PALM_T * 0.35f + 0.08f), -PALM_H * 0.20f, PALM_W * 0.20f);
+	glRotatef(side * -25.0f, 0, 0, 1);  // splay from palm
+	glRotatef(20.0f, 0, 1, 0);          // bring forward
 	drawFingerSegmented(0.85f, 15, 18, 12);
 	glPopMatrix();
 }
-
 
 // --- Natural finger (MCP -> PIP -> DIP) ---
 static void drawFingerNatural(float splayDeg, float yawDeg,
@@ -1186,105 +1861,346 @@ static void drawFingerNatural(float splayDeg, float yawDeg,
 	float scale = 1.0f)
 {
 	const float L1 = 0.55f * scale, L2 = 0.45f * scale, L3 = 0.38f * scale;
-	const float R1 = 0.115f * scale, R2 = 0.100f * scale, R3 = 0.085f * scale;
+	const float W1 = 0.23f * scale, W2 = 0.20f * scale, W3 = 0.17f * scale;
+	const float D = 0.18f * scale;
 
 	glPushMatrix();
-	glRotatef(splayDeg, 0, 1, 0);   // spread
-	glRotatef(yawDeg, 0, 1, 0);   // twist
-	glRotatef(rollDeg, 0, 0, 1);   // lateral
+	glRotatef(splayDeg, 0, 1, 0); // spread
+	glRotatef(yawDeg, 0, 1, 0); // twist (around Y)
+	glRotatef(rollDeg, 0, 0, 1); // lateral roll
 
-	// proximal
-	drawCapsuleDownY(R1, R1 * 0.92f, L1);
+	// Proximal
+	quadFingerSegment(W1, W2, D, L1);
 	glTranslatef(0, -L1, 0); glRotatef(curl1, 1, 0, 0);
 
-	// middle
-	drawCapsuleDownY(R2, R2 * 0.90f, L2);
+	// Middle
+	quadFingerSegment(W2, W3, D * 0.95f, L2);
 	glTranslatef(0, -L2, 0); glRotatef(curl2, 1, 0, 0);
 
-	// distal
-	drawCapsuleDownY(R3, R3 * 0.88f, L3);
+	// Distal + tip
+	quadFingerSegment(W3, W3 * 0.9f, D * 0.9f, L3);
 	glTranslatef(0, -L3, 0);
-	glPushMatrix(); // fingertip pad
-	glTranslatef(0, -0.03f * scale, 0.02f * scale);
-	glScalef(1.0f, 0.75f, 0.85f);
-	drawSphere(R3 * 0.95f, 14, 14);
-	glPopMatrix();
+	triFingertip(W3 * 0.9f, D * 0.85f);
 
 	glRotatef(curl3, 1, 0, 0);
 	glPopMatrix();
 }
 
-// --- Hand (palm + 4 fingers + thumb). side = -1 left, +1 right ---
+// ======== QUADS/TRIS ONLY PRIMITIVES ========
 
-// --- Full arm resting down the side. side = -1 left, +1 right ---
+static inline void vnorm3f(float x, float y, float z) {
+    // unit-length normal (cheap normalize)
+    float m = sqrtf(x*x + y*y + z*z); if (m < 1e-6f) m = 1.0f;
+    glNormal3f(x/m, y/m, z/m);
+}
+
+// Connect two elliptical rings with QUADS, along -Y.
+// slices = 16..32 looks nice (keep even for clean loops).
+static void connectRingsQuads(int slices,
+                              float y0, float rx0, float rz0, float twist0Deg,
+                              float y1, float rx1, float rz1, float twist1Deg)
+{
+    const float t0 = twist0Deg * 3.1415926f / 180.0f;
+    const float t1 = twist1Deg * 3.1415926f / 180.0f;
+
+    glBegin(GL_QUADS);
+    for (int i = 0; i < slices; ++i) {
+        int j = (i + 1) % slices;
+        float a0 = (2.0f * 3.1415926f * i) / slices, a1 = (2.0f * 3.1415926f * j) / slices;
+
+        // ring 0
+        float c0 = cosf(a0 + t0), s0 = sinf(a0 + t0);
+        float x0 = rx0 * c0, z0 = rz0 * s0;
+        float nx0 = c0 / (rx0 > 1e-6f ? 1.0f : 1.0f);
+        float nz0 = s0 / (rz0 > 1e-6f ? 1.0f : 1.0f);
+
+        float c1 = cosf(a1 + t0), s1 = sinf(a1 + t0);
+        float x1 = rx0 * c1, z1 = rz0 * s1;
+        float nx1 = c1, nz1 = s1;
+
+        // ring 1
+        float C0 = cosf(a0 + t1), S0 = sinf(a0 + t1);
+        float X0 = rx1 * C0, Z0 = rz1 * S0;
+        float NX0 = C0, NZ0 = S0;
+
+        float C1 = cosf(a1 + t1), S1 = sinf(a1 + t1);
+        float X1 = rx1 * C1, Z1 = rz1 * S1;
+        float NX1 = C1, NZ1 = S1;
+
+        // QUAD (v0->v1->V1->V0)
+        vnorm3f(nx0, 0, nz0); glVertex3f(x0, y0, z0);
+        vnorm3f(nx1, 0, nz1); glVertex3f(x1, y0, z1);
+        vnorm3f(NX1, 0, NZ1); glVertex3f(X1, y1, Z1);
+        vnorm3f(NX0, 0, NZ0); glVertex3f(X0, y1, Z0);
+    }
+    glEnd();
+}
+
+// Make an elliptical “tube section” along -Y with optional twist from start→end.
+static void tubeSectionQuads(int slices, float L,
+                             float rxStart, float rzStart,
+                             float rxEnd,   float rzEnd,
+                             float twistDegStart = 0.0f,
+                             float twistDegEnd   = 0.0f)
+{
+    connectRingsQuads(slices, 0.0f, -rxStart, -rzStart, twistDegStart,  // flip signs to keep normals outward
+                               -L,   -rxEnd,   -rzEnd,   twistDegEnd);
+}
+
+// Simple end cap (TRIANGLES) for an ellipse at Y = y, facing +Y or -Y (dir = +1/-1).
+static void ellipseCapTri(int slices, float y, float rx, float rz, int dir)
+{
+    float ny = (dir > 0 ? 1.0f : -1.0f);
+    glBegin(GL_TRIANGLES);
+    for (int i = 0; i < slices; ++i) {
+        int j = (i + 1) % slices;
+        float a0 = (2.0f * 3.1415926f * i) / slices;
+        float a1 = (2.0f * 3.1415926f * j) / slices;
+
+        vnorm3f(0, ny, 0); glVertex3f(0, y, 0);
+        vnorm3f(0, ny, 0); glVertex3f(rx * cosf(a1), y, rz * sinf(a1));
+        vnorm3f(0, ny, 0); glVertex3f(rx * cosf(a0), y, rz * sinf(a0));
+    }
+    glEnd();
+}
+
+
+
+// --- Full arm (shoulder to wrist). side = -1 left, +1 right
 static void drawArmDown(int side)
 {
 	const EllipseProfile* T; int TN; float BODY_H;
 	getTorsoProfile(T, TN, BODY_H);
 
-	// skin material (match body)
+	// skin
 	const SkinPreset& SKIN = SKIN_LIGHT_TAN;
 	applySkinMaterial(SKIN.base);
-	glDisable(GL_TEXTURE_2D);
 	if (!lightingEnabled()) glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]); else glColor3f(1, 1, 1);
 
-	// shoulder placement (sample at upper chest band)
-	const float SHOULDER_YN = 0.48f;
+	// placement at shoulder
+	const float SHOULDER_YN = 0.78f;
 	const float a = sampleA(T, TN, SHOULDER_YN);
 	const float b = sampleB(T, TN, SHOULDER_YN);
 	const float yS = SHOULDER_YN * BODY_H;
-	const float xS = side * (a * 1.4f);
-	const float zS = b * 0.20f;
+	const float xS = side * (a * 0.95f);
+	const float zS = b * 0.25f;
 
-	// segment dims
-	const float UPPER_LEN = 2.40f, FORE_LEN = 2.35f;
-	const float SHOULDER_R = 0.42f;
-	const float UPPER_R0 = 0.38f, UPPER_R1 = 0.3f;
-	const float ELBOW_R = 0.30f;
-	const float FORE_R0 = 0.30f, FORE_R1 = 0.22f;
-	const float WRIST_R = 0.18f;
+	// proportions (tuned to your screenshots)
+	const int   SLICES = 20;     // grid density
+	const float UPPER_LEN = 2.40f;  // shoulder -> elbow
+	const float FORE_LEN = 2.35f;  // elbow -> wrist
 
-	// natural pose
+	// radius sets (elliptical; X = thickness, Z = width)
+	// Shoulder “cap” → upper arm → elbow → forearm → wrist
+	const float SHO_RX = 0.55f, SHO_RZ = 0.50f;    // deltoid cap (round)
+	const float HUM_RX0 = 0.42f, HUM_RZ0 = 0.36f;  // proximal humerus (full)
+	const float HUM_RX1 = 0.34f, HUM_RZ1 = 0.30f;  // mid humerus (taper)
+	const float HUM_RX2 = 0.30f, HUM_RZ2 = 0.27f;  // near elbow (narrowest)
+
+	const float ELB_RX = 0.33f, ELB_RZ = 0.30f;  // elbow olecranon “ball” (lo‑poly)
+	const float PRO_RX0 = 0.33f, PRO_RZ0 = 0.28f;  // proximal forearm bulk (brachioradialis)
+	const float PRO_RX1 = 0.29f, PRO_RZ1 = 0.26f;  // mid‑forearm
+	const float DST_RX = 0.22f, DST_RZ = 0.20f;  // wrist
+
+	// small lengths for shaping transitions
+	const float SHO_CAP = 0.35f;     // shoulder cap height
+	const float ELB_SEG = 0.30f;     // elbow bulge height
+	const float WRIST_SEG = 0.22f;   // wrist collar height
+
+	// pronation twist across the forearm (like your +8°)
+	const float TWIST_FORE = 8.0f * (float)side;
+
+	// arm pose
 	const float ARM_YAW = 6.0f;  // slight inward
-	const float ARM_PITCH = 4.0f; // slight forward
+	const float ARM_PITCH = 4.0f;  // slight forward
 
 	glPushMatrix();
 	glTranslatef(xS, yS, zS);
 
-	// shoulder cap
-	glPushMatrix(); glTranslatef(0, 0.08f, 0);
-	drawEllipsoid(SHOULDER_R * 1.05f, SHOULDER_R * 0.95f, SHOULDER_R * 1.00f, 28);
+	glRotatef(ARM_YAW * (float)side, 0, 1, 0);
+
+
+	//if (side < 0 && gOffhandActive) {
+	//	// Convert world target -> this shoulder's local
+	//	GLfloat Msh[16], Inv[16];
+	//	glGetFloatv(GL_MODELVIEW_MATRIX, Msh);
+	//	invRigidM4(Msh, Inv);
+	//	float pL[3]; mulPointM4(Inv, gOffhandTargetW, pL); // local target
+
+	//	// Shoulder aim (yaw around Y, pitch around X)
+	//	float yaw = rad2deg(atan2f(pL[0], pL[2]));                  // left/right
+	//	float pitch = -rad2deg(atan2f(pL[1], sqrtf(pL[0] * pL[0] + pL[2] * pL[2]))); // up/down
+	//	glRotatef(yaw, 0, 1, 0);
+	//	glRotatef(pitch, 1, 0, 0);
+
+	//	// Skip additive action rotations for the left arm (we’re aiming it)
+	//}
+	//else {
+	//	// original additive action for left arm:
+	//	glRotatef(actLShoulderYaw, 0, 1, 0);
+	//	glRotatef(actLShoulderPitch, 1, 0, 0);
+	//	glRotatef(actLShoulderRoll, 0, 0, 1);
+	//}
+
+
+	// swing arms opposite to legs: right arm in phase, left arm π out of phase
+	float armSwing = sinf(gWalkPhase + (side > 0 ? 0.0f : 3.14159265f)) * gArmAmpDeg;
+	glRotatef(ARM_PITCH + armSwing, 1, 0, 0);
+	// ===== additive action shoulder pose =====
+	if (side > 0) { // right
+		glRotatef(actRShoulderYaw, 0, 1, 0);
+		glRotatef(actRShoulderPitch, 1, 0, 0);
+		glRotatef(actRShoulderRoll, 0, 0, 1);
+	}
+	else {          // left
+		glRotatef(actLShoulderYaw, 0, 1, 0);
+		glRotatef(actLShoulderPitch, 1, 0, 0);
+		glRotatef(actLShoulderRoll, 0, 0, 1);
+	}
+
+
+	// ---------- SHOULDER CAP (two short dome-like sections, quads only) ----------
+	glPushMatrix();
+	// Section A: very short bulge from torso to deltoid roundness
+	tubeSectionQuads(SLICES, SHO_CAP * 0.5f,
+		SHO_RX * 0.75f, SHO_RZ * 0.72f,
+		SHO_RX, SHO_RZ, 0, 0);
+	glTranslatef(0, -SHO_CAP * 0.5f, 0);
+
+	// Section B: blend into proximal humerus (slightly narrower, starts arm)
+	tubeSectionQuads(SLICES, SHO_CAP * 0.5f,
+		SHO_RX, SHO_RZ,
+		HUM_RX0, HUM_RZ0, 0, 0);
 	glPopMatrix();
 
-	// aim the arm
-	glRotatef(ARM_YAW * (float)side, 0, 1, 0);
-	glRotatef(ARM_PITCH, 1, 0, 0);
+	// Move down from the shoulder cap
+	glTranslatef(0, -SHO_CAP, 0);
 
-	// upper arm
-	pushDarken(0.985f);
-	drawCapsuleDownY(UPPER_R0, UPPER_R1, UPPER_LEN);
+	// ---------- UPPER ARM (two longer sections for deltoid→triceps taper) ----------
+	// Upper arm A: gentle taper (deltoid bulk → mid humerus)
+	tubeSectionQuads(SLICES, UPPER_LEN * 0.55f,
+		HUM_RX0, HUM_RZ0,
+		HUM_RX1, HUM_RZ1, 0, 0);
+	glTranslatef(0, -(UPPER_LEN * 0.55f), 0);
 
-	// elbow
-	glTranslatef(0, -UPPER_LEN, 0);
-	drawSphere(ELBOW_R, 20, 20);
+	// Upper arm B: stronger taper toward elbow
+	tubeSectionQuads(SLICES, UPPER_LEN * 0.45f,
+		HUM_RX1, HUM_RZ1,
+		HUM_RX2, HUM_RZ2, 0, 0);
+	glTranslatef(0, -(UPPER_LEN * 0.45f), 0);
 
-	// forearm (slight pronation)
-	glRotatef(8.0f * (float)side, 0, 1, 0);
-	drawCapsuleDownY(FORE_R0, FORE_R1, FORE_LEN);
+	// ---------- ELBOW (short “ball” made of two tapered tube slices) ----------
+	// Elbow A: expand a touch
+	tubeSectionQuads(SLICES, ELB_SEG * 0.5f,
+		HUM_RX2, HUM_RZ2,
+		ELB_RX, ELB_RZ, 0, 0);
+	glTranslatef(0, -(ELB_SEG * 0.5f), 0);
+	// Elbow B: contract again (gives the olecranon bump)
+	tubeSectionQuads(SLICES, ELB_SEG * 0.5f,
+		ELB_RX, ELB_RZ,
+		PRO_RX0, PRO_RZ0, 0, 0);
+	glTranslatef(0, -(ELB_SEG * 0.5f), 0);
+	// --- ELBOW (after you place the elbow sphere) ---
+	if (side > 0) {
+		glRotatef(actRElbowFlex, 1, 0, 0);
+	}
+	else {
+		float pL[3] = { 0,0,0 };   // local grip target for left arm
+		bool havePL = false;
 
-	// Wrist
-	glTranslatef(0.0f, -0.5f, 0.0f);
-	drawSphere(0.25f, 18, 18);
+		//if (side < 0 && gOffhandActive) {
+		//	// Convert world target -> this shoulder's local
+		//	GLfloat Msh[16], Inv[16];
+		//	glGetFloatv(GL_MODELVIEW_MATRIX, Msh);
+		//	invRigidM4(Msh, Inv);
+		//	mulPointM4(Inv, gOffhandTargetW, pL);
+		//	havePL = true;
 
-	// Hand pose
-	glTranslatef(0, -0.3f, 0);
-	glRotatef(-10, 1, 0, 0);           // wrist flex
-	glRotatef(8 * side, 0, 0, 1);      // roll inward
+		//	// Shoulder aim
+		//	float yaw = rad2deg(atan2f(pL[0], pL[2]));
+		//	float pitch = -rad2deg(atan2f(pL[1], sqrtf(pL[0] * pL[0] + pL[2] * pL[2])));
+		//	glRotatef(yaw, 0, 1, 0);
+		//	glRotatef(pitch, 1, 0, 0);
+		//}
+		//
+		//else {
+			//glRotatef(actLElbowFlex, 1, 0, 0);
+		//}
+	}
 
-	drawHandNatural(side);
+	// Add elbow flex from action pose
+	if (side > 0) glRotatef(actRElbowFlex, 1, 0, 0);
+	else          glRotatef(actLElbowFlex, 1, 0, 0);
+
+	// ---------- FOREARM (subtle pronation twist) ----------
+	// Proximal forearm bulk → mid
+	tubeSectionQuads(SLICES, FORE_LEN * 0.58f,
+		PRO_RX0, PRO_RZ0,
+		PRO_RX1, PRO_RZ1,
+		0.0f, TWIST_FORE * 0.5f);
+	glTranslatef(0, -(FORE_LEN * 0.58f), 0);
+
+	// Mid → distal wrist taper (continue twist)
+	tubeSectionQuads(SLICES, FORE_LEN * 0.42f,
+		PRO_RX1, PRO_RZ1,
+		DST_RX, DST_RZ,
+		TWIST_FORE * 0.5f, TWIST_FORE);
+	glTranslatef(0, -(FORE_LEN * 0.42f), 0);
+
+	// ---------- WRIST COLLAR (short tightening to match hand root) ----------
+	tubeSectionQuads(SLICES, WRIST_SEG,
+		DST_RX, DST_RZ,
+		DST_RX * 0.94f, DST_RZ * 0.94f,
+		TWIST_FORE, TWIST_FORE);
+	glTranslatef(0, -WRIST_SEG, 0);
+
+	// ---------- WRIST / HAND ORIENTATION ----------
+	float wristFlex = -10.0f;           // neutral bend
+	float wristRoll = 8.0f * side;      // small inward roll by default
+
+	if (side > 0) { // weapon hand (right)
+		if (gWpnState == WPN_X_SWEEP) {
+			// Overhand grip (palm-down), not upside down
+			// add a little untwist through the sweep for life
+			float t = clamp01(gWpnTimer / 0.28f);
+			wristRoll = -70.0f + 20.0f * (t - 0.5f);   // start rolled-in, ease out a bit
+			wristFlex = -8.0f;
+		}
+		else if (gWpnState == WPN_X_CHARGING) {
+			// keep overhand while drawing back
+			wristRoll = -50.0f;
+			wristFlex = -6.0f;
+		}
+	}
+
+	glRotatef(wristFlex, 1, 0, 0);   // bend
+	glRotatef(wristRoll, 0, 0, 1);   // roll controls palm up/down
+
+
+	// draw hand (your QUAD/TRI version)
+	if (side > 0) {
+		drawHandNatural(+1);
+		if (showModelLines) drawWireOverlay([] {drawHandNatural(+1);});
+	}
+	else {
+		drawHandNatural(-1);
+		if (showModelLines) drawWireOverlay([] {drawHandNatural(-1);});
+
+	}
+
+	if (side > 0) {
+		if (gWpnState == WPN_IN_HAND || gWpnState == WPN_Z_COMBO || gWpnState == WPN_X_CHARGING || gWpnState == WPN_X_SWEEP || gWpnState == WPN_C_WATERSKIM) {
+			drawTridentHeldPose();
+		}
+	}
+
+	if (side < 0) gOffhandActive = false;   // left arm consumed the target this frame
+
+
 
 	glPopMatrix();
 }
+
 
 // Public wrappers you call in your scene:
 void leftarm() { drawArmDown(-1); }
@@ -1422,7 +2338,6 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	// match body skin
 	const SkinPreset& SKIN = SKIN_LIGHT_TAN;
 	applySkinMaterial(SKIN.base);
-	glDisable(GL_TEXTURE_2D);
 	if (glIsEnabled(GL_LIGHTING)) glColor3f(1, 1, 1); else glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
 
 	// anchor to hip ring
@@ -1442,7 +2357,7 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	const float THIGH_LEN = 2.70f;
 	const float SHIN_LEN = 2.60f;      // fixed (was 0.65f by mistake)
 	const float HIP_R = 0.62f;
-	const float THIGH_R0 = 0.62f, THIGH_R1 = 0.46f;
+	const float THIGH_R0 = 0.62f, THIGH_R1 = 0.00f;
 	const float KNEE_R = 0.40f;
 	const float CALF_R0 = 0.44f, CALF_R1 = 0.30f; // calf bulge -> ankle
 	const float ANKLE_R = 0.24f;
@@ -1463,10 +2378,21 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	// aim the leg
 	glRotatef(LEG_YAW, 0, 1, 0);
 	glRotatef(LEG_PITCH, 1, 0, 0);
+	// Add hip pitch from action
+	if (side > 0) glRotatef(actHipPitchR, 1, 0, 0);
+	else          glRotatef(actHipPitchL, 1, 0, 0);
+
+	glTranslatef(0, -THIGH_LEN, 0);
+	drawSphere(KNEE_R, 20, 20);
+
+	// legs swing opposite to arms: right leg π out of phase vs right arm
+	float legSwing = -sinf(gWalkPhase + (side > 0 ? 3.14159265f : 0.0f)) * gLegAmpDeg;
+	glRotatef(legSwing, 1, 0, 0);
+
 
 	// --- sarong panel that follows this leg ---
 	glPushMatrix();
-	glTranslatef(0.2f * side, 0.0f, 0.2f);
+	glTranslatef(0.0f * side, 0.0f, 0.2f);
 	glRotatef(8.0f * side, 0, 1, 0);
 	glColor3f(0.83f, 0.69f, 0.22f);
 	drawSarongPanel(/*halfW*/0.53f, /*len*/THIGH_LEN * 0.75f, /*halfT*/0.53f);
@@ -1488,7 +2414,9 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	glPopMatrix();
 
 	// CALF / SHIN (calf bulge high, taper to ankle)
-	glRotatef(1.5f, 1, 0, 0);
+	float kneeFlex = (side > 0 ? actKneeFlexR : actKneeFlexL);
+	glRotatef(1.5f + kneeFlex, 1, 0, 0);
+
 	drawCapsuleDownY(CALF_R0, CALF_R1, SHIN_LEN * 0.55f);
 	// slight second segment to reach ankle length and create nicer curve
 	glTranslatef(0, -(SHIN_LEN * 0.55f), 0);
@@ -1560,7 +2488,6 @@ static void drawSarongHuggingTorso(float pelvisY)
 {
 	// color/material — same gold you use for the sarong
 	glColor3f(0.83f, 0.69f, 0.22f);
-	glDisable(GL_TEXTURE_2D);
 
 	// pull torso profile to compute ellipses
 	const EllipseProfile* T; int TN; float BODY_H;
@@ -1694,6 +2621,7 @@ static void drawEar(float side /*-1 left, +1 right*/, float rx, float ry, float 
 static void drawNeck(float rTop, float rBot, float len){
 	glPushMatrix();
 	glRotatef(+90.0f, 1,0,0);               // build along +Z
+
 	glCallList(getCapsuleList(rTop, rBot, len, 28));
 	glPopMatrix();
 
@@ -1738,7 +2666,6 @@ void head(){
 	applySkinMaterial(SKIN.base);
 	if (glIsEnabled(GL_LIGHTING)) glColor3f(1,1,1);
 	else                           glColor3f(SKIN.base[0],SKIN.base[1],SKIN.base[2]);
-	glDisable(GL_TEXTURE_2D);
 
 	// overall proportions (tuned to your screenshot scale)
 	// --- proportions (bigger skull) ---
@@ -1765,6 +2692,8 @@ void head(){
 	glPushMatrix();
 	// center neck, slight forward lean
 	glRotatef(3.0f, 1,0,0);
+	
+	
 	drawNeck(NECK_R0, NECK_R1, NECK_L);
 	glPopMatrix();
 	// ================= Collar gasket (overlap into torso) =================
@@ -1779,8 +2708,6 @@ void head(){
 		const float aBot = aNeck * 0.885f;
 		const float bBot = bNeck * 0.885f;
 
-		GLboolean wasTex = glIsEnabled(GL_TEXTURE_2D);
-		glDisable(GL_TEXTURE_2D);
 		if (glIsEnabled(GL_LIGHTING)) glColor3f(1, 1, 1); else glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
 
 		glPushMatrix();
@@ -1796,7 +2723,6 @@ void head(){
 		glEnd();
 		glPopMatrix();
 
-		if (wasTex) glEnable(GL_TEXTURE_2D);
 
 		// (optional) show its rim in V wireframe mode
 		
@@ -1844,6 +2770,7 @@ void head(){
 		// lower lid
 		glPushMatrix();
 		glTranslatef(0.0f, -sclRY * 0.30f, zF * 0.72f);
+		glScalef(1.03f, 0.28f, 0.55f);
 		glScalef(1.03f, 0.28f, 0.55f);
 		drawEllipsoid(sclRX * 0.92f, sclRY * 0.92f, sclRZ * 0.50f, 18);
 		glPopMatrix();
@@ -2047,7 +2974,7 @@ void head(){
 
 
 void poseidon() {
-	glClearColor(0.75, 0.75, 0.75, 0.0);
+	glClearColor(0.2,0.2,0.2 ,0.0);
 	glEnable(GL_DEPTH_TEST);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -2098,12 +3025,37 @@ void poseidon() {
 	body();
 	leftarm();
 	rightarm();
+	// Add action torso orientation on top of your heading
+	glRotatef(actTorsoYaw, 0, 1, 0);
+	glRotatef(actTorsoPitch, 1, 0, 0);
+	glRotatef(actTorsoRoll, 0, 0, 1);
+
 
 	glPushMatrix();
 	glTranslatef(0, -4, 0);
 	leftleg();
 	rightleg();
 	glPopMatrix();
+
+	// Weapon on back when not equipped
+	if (gWpnState == WPN_ON_BACK || gWpnState == WPN_EQUIP_ANIM)
+		drawTridentOnBack();
+	
+	
+
+
+	// C water trail (world-space)
+	renderWaterTrail();
+	if (gWpnState == WPN_X_SWEEP) {
+		glPushMatrix();
+		glTranslatef(xPosition, yPosition, zPosition);
+		glRotatef(rotateY + actTorsoYaw, 0, 1, 0);   // add torso twist
+		drawShockwave(6.8f + 1.2f * gWpnCharge);
+		glPopMatrix();
+	}
+	drawGroundImpactRing();
+
+
 	// draw pelvis-anchored belt/back once, using last hip ring values
 // NEW: continuous skirt that hugs the body at the top (no gap)
 	drawSarongHuggingTorso(gPelvisY);
