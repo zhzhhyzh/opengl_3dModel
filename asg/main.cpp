@@ -29,7 +29,7 @@ float rotateX = 0;
 float rotateY = 0;
 int textureChange = 1;
 bool changing = false;
-float OLeft = -10.0, ORight = 10.0, ODown = -10.0, OUp = 10.0, ONear = -10.0, OFar = 10.0;
+float OLeft = -20.0, ORight = 20.0, ODown = -20.0, OUp = 20.0, ONear = -20.0, OFar = 20.0;
 float xPosition = 0.0f, yPosition = 0.0f, zPosition = 0.05f;
 
 //Left leg
@@ -377,6 +377,8 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		}
 
 		else if (wParam == 'X') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_X_CHARGING; gWpnTimer = 0; gWpnCharge = 0; gWpnKeyXDown = true; } }
+
+
 		else if (wParam == 'C') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_C_WATERSKIM; gWpnTimer = 0; gWaterTrail.clear(); } }
 
 		
@@ -403,7 +405,7 @@ void projection() {
 	}
 	else
 	{
-		gluPerspective(90, 1, 1, 100);
+		gluPerspective(90, 1, 1, 200);
 		glFrustum(-30.0, 30.0, -30.0, 30.0, -10, 100);
 		glTranslatef(0, 0, zoom);
 	}
@@ -511,60 +513,70 @@ bool initPixelFormat(HDC hdc)
 }
 // Radial water‑splash shockwave (XZ ring + upward splash spikes)
 // `len` acts as the outer radius of the expanding ring.
-static void drawShockwave(float len) {
+// Half-arc water shockwave (forward), oriented by yawDeg around +Y.
+// arcDeg defaults to 180 so it's a half circle; you can tighten/widen if you like.
+static void drawShockwave(float len, float yawDeg = 0.0f, float arcDeg = 180.0f) {
 	if (len < 0.0f) len = 0.0f;
 
-	const int   SEG = 72;            // ring smoothness
-	const float R1 = len;           // outer radius
-	const float R0 = (len > 0.22f) ? (len - 0.22f) : 0.0f;  // inner radius
-	const float Y = 0.02f;         // near‑ground height
-	const float A0 = 0.45f * (1.0f - fminf(len * 0.4f, 0.85f)); // fade as it grows
+	const int   SEG = 64;                                  // smoothness along the arc
+	const float R1 = len;                                 // outer radius
+	const float R0 = (len > 0.22f) ? (len - 0.22f) : 0.0f;// inner radius (ring thickness)
+	const float Y = 0.02f;                               // near-ground height
+	const float A0 = 0.45f * (1.0f - fminf(len * 0.4f, 0.85f)); // fade with growth
+
+	// arc range centered forward (+Z). Example: -90°..+90° gives a half-circle
+	const float halfArc = 0.5f * arcDeg * (3.14159265f / 180.0f);
+	const float thStart = -halfArc;
+	const float thEnd = +halfArc;
 
 	glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_LINE_BIT);
 	glDisable(GL_LIGHTING);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	// --- 1) Expanding circular ring on the ground (triangle strip) ---
+	glPushMatrix();
+	// Face the arc using supplied yaw (character facing / weapon swing)
+	glRotatef(yawDeg, 0, 1, 0);
+
+	// --- 1) Expanding half-ring (triangle strip) ---
 	glBegin(GL_TRIANGLE_STRIP);
 	for (int i = 0; i <= SEG; ++i) {
 		float t = (float)i / (float)SEG;
-		float th = t * 6.28318530718f; // 2π
+		float th = thStart + t * (thEnd - thStart);
 		float c = cosf(th), s = sinf(th);
 
-		glColor4f(0.70f, 0.88f, 1.0f, A0);        // inner edge (brighter)
-		glVertex3f(R0 * c, Y, R0 * s);
+		glColor4f(0.70f, 0.88f, 1.0f, A0);
+		glVertex3f(R0 * s, Y, R0 * c);   // inner edge (note s→X, c→Z so 0 rad points +Z)
 
-		glColor4f(0.70f, 0.88f, 1.0f, A0 * 0.15f); // outer edge (fade out)
-		glVertex3f(R1 * c, Y, R1 * s);
+		glColor4f(0.70f, 0.88f, 1.0f, A0 * 0.15f);
+		glVertex3f(R1 * s, Y, R1 * c);   // outer edge
 	}
 	glEnd();
 
-	// --- 2) Short upward splash “crowns” around the ring (tri wedges) ---
-	// uses a little noise with sin/cos so it wiggles as `len` changes
+	// --- 2) Upward splash spikes around the arc (tri wedges) ---
 	glBegin(GL_TRIANGLES);
-	const int SPIKES = 24;
+	const int SPIKES = 20;
 	for (int i = 0; i < SPIKES; ++i) {
-		float t = (float)i / (float)SPIKES;
-		float th = t * 6.28318530718f;
+		float t = (float)i / (float)(SPIKES - 1);           // cover full arc ends
+		float th = thStart + t * (thEnd - thStart);
 		float c = cosf(th), s = sinf(th);
 
-		float r = 0.5f * (R0 + R1);               // base radius for spike
+		float r = 0.5f * (R0 + R1);
 		float h = 0.35f + 0.55f * (0.5f + 0.5f * sinf(7.0f * th + len * 6.0f));
-		float w = 0.08f + 0.04f * cosf(5.0f * th); // small varying width
+		float w = 0.08f + 0.04f * cosf(5.0f * th);
 		float aSp = A0 * 0.75f;
 
 		glColor4f(0.75f, 0.92f, 1.0f, aSp);
-		glVertex3f((r - w) * c, Y, (r - w) * s);   // base left
-		glVertex3f((r + w) * c, Y, (r + w) * s);   // base right
+		glVertex3f((r - w) * s, Y, (r - w) * c); // base L
+		glVertex3f((r + w) * s, Y, (r + w) * c); // base R
 		glColor4f(0.75f, 0.92f, 1.0f, aSp * 0.85f);
-		glVertex3f(r * c, h, r * s);               // tip up
+		glVertex3f(r * s, h, r * c);             // tip
 	}
 	glEnd();
 
+	glPopMatrix();
 	glPopAttrib();
 }
-
 
 static void renderWaterTrail() {
 	if (gWaterTrail.empty()) return;
@@ -581,6 +593,18 @@ static void renderWaterTrail() {
 	glEnd();
 	glPopAttrib();
 }
+
+// ====== Simple projectile system ======
+struct Bullet { float p[3]; float v[3]; float life; };
+static std::vector<Bullet> gBullets;
+static float gBulletRate = 8.0f;        // bullets per second during fire
+static float gBulletCooldown = 0.0f;    // time left until next shot
+
+// Where bullets spawn (computed each frame inside drawTridentHeldPose)
+static float gMuzzleW[3] = { 0,0,0 };  // world-space spawn point
+static float gMuzzleDirW[3] = { 0,0,1 };  // world-space forward
+static inline void norm3f(float& x, float& y, float& z) { float m = sqrtf(x * x + y * y + z * z); if (m < 1e-6f)m = 1; x /= m; y /= m; z /= m; }
+
 
 
 
@@ -701,20 +725,57 @@ static void computeActionPose()
 
 	// ===== C : Water Skimming — back & forth slashes while stepping
 	if (gWpnState == WPN_C_WATERSKIM) {
-		float t = gWpnTimer;              // seconds
-		float swing = sinf(t * 9.0f);       // fast lateral
-		actTorsoYaw += 14.0f * swing;
-		actRShoulderYaw += 26.0f * swing;
-		actRShoulderPitch += 10.0f;
-		actRElbowFlex += 16.0f;
-		actLShoulderPitch += -12.0f * swing;
-		// light stepping stance
-		actHipPitchL += 8.0f;
-		actHipPitchR += 6.0f;
-		actKneeFlexL += 10.0f + 4.0f * (swing > 0 ? swing : 0);
-		actKneeFlexR += 10.0f + 4.0f * (swing < 0 ? -swing : 0);
+		float t = gWpnTimer;          // seconds
+		const float tRaise = 0.35f;   // time to raise
+		if (t < tRaise) {
+			float u = easeInOut(t / tRaise);
+			// raise both hands overhead, slight lean back
+			//actTorsoPitch += lerp(0, -8, u);
+			actRShoulderPitch += lerp(0, -120, u);  // arms up
+			actLShoulderPitch += lerp(0, -30, u);
+			actRElbowFlex += lerp(0, 18, u);
+			actLElbowFlex += lerp(0, 18, u);
+			/*actHipPitchL += lerp(0, 6, u);
+			actHipPitchR += lerp(0, 6, u);
+			actKneeFlexL += lerp(0, 8, u);
+			actKneeFlexR += lerp(0, 8, u);*/
+		}
+		else {
+			// hold high while firing; add a little tremble
+			float s = sinf((t - tRaise) * 18.0f) * 3.0f;
+			actRShoulderPitch += -120.0f;
+			actLShoulderPitch += -30.0f;
+			actRElbowFlex += 16.0f + s * 0.25f;
+			actLElbowFlex += 16.0f - s * 0.25f;
+			//actTorsoPitch += -6.0f;
+		}
 		return;
 	}
+
+}
+static void renderBullets() {
+	if (gBullets.empty()) return;
+
+	glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_LIGHTING_BIT);
+	glDisable(GL_LIGHTING);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	for (const Bullet& b : gBullets) {
+		float a = fminf(1.0f, fmaxf(0.0f, b.life));   // fade out
+		glPushMatrix();
+		glTranslatef(b.p[0], b.p[1], b.p[2]);
+		glColor4f(0.55f, 0.85f, 1.0f, 0.25f + 0.55f * a);
+		// halo
+		glScalef(0.22f, 0.22f, 0.22f);
+		drawSphere(1.0f, 10, 10);
+		// bright core
+		glColor4f(0.75f, 0.95f, 1.0f, 0.95f * a);
+		glScalef(0.45f, 0.45f, 0.45f);
+		drawSphere(1.0f, 10, 10);
+		glPopMatrix();
+	}
+	glPopAttrib();
 }
 
 static void updateWeapon(float dt) {
@@ -779,14 +840,56 @@ static void updateWeapon(float dt) {
 	// C
 	if (gWpnState == WPN_C_WATERSKIM) {
 		gWpnTimer += dt;
-		// trail point in front of character
-		TrailPt tp; tp.x = xPosition; tp.y = yPosition + 0.6f; tp.z = zPosition + 0.9f; tp.life = 1.0f;
-		gWaterTrail.push_back(tp);
-		for (auto& p : gWaterTrail) p.life -= dt * 1.4f;
-		while (!gWaterTrail.empty() && gWaterTrail.front().life <= 0) gWaterTrail.erase(gWaterTrail.begin());
-		if (gWpnTimer > 0.80f) { gWpnState = WPN_IN_HAND; gWpnTimer = 0; }
+
+		const float tRaise = 0.35f;   // raise phase before shooting
+		const float tTotal = 0.95f;   // total length of the move
+		const float bulletSpeed = 14.0f; // world units / sec
+		const float spreadDeg = 3.0f;  // tiny random cone
+
+		// After raising, fire on a cadence
+		if (gWpnTimer > tRaise) {
+			gBulletCooldown -= dt;
+			if (gBulletCooldown <= 0.0f) {
+				// spawn a bullet at gMuzzleW along gMuzzleDirW (use latest values set in drawTridentHeldPose)
+				Bullet b;
+				b.p[0] = gMuzzleW[0]; b.p[1] = gMuzzleW[1]; b.p[2] = gMuzzleW[2];
+
+				// small random spread
+				float yaw = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * (spreadDeg * 3.1415926f / 180.0f);
+				float pit = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * (spreadDeg * 3.1415926f / 180.0f);
+				// rotate dir by small yaw & pitch
+				float dx = gMuzzleDirW[0], dy = gMuzzleDirW[1], dz = gMuzzleDirW[2];
+				// yaw around +Y
+				float cY = cosf(yaw), sY = sinf(yaw);
+				float dx1 = cY * dx + sY * dz;
+				float dz1 = -sY * dx + cY * dz;
+				// pitch around +X
+				float cP = cosf(pit), sP = sinf(pit);
+				float dy2 = cP * dy - sP * dz1;
+				float dz2 = sP * dy + cP * dz1;
+
+				float vx = dx1 * bulletSpeed;
+				float vy = dy2 * bulletSpeed;
+				float vz = dz2 * bulletSpeed;
+				b.v[0] = vx; b.v[1] = vy; b.v[2] = vz;
+				b.life = 1.6f; // seconds
+
+				gBullets.push_back(b);
+
+				// cadence
+				gBulletCooldown = 1.0f / gBulletRate;
+			}
+		}
+
+		if (gWpnTimer > tTotal) {
+			gWpnState = WPN_IN_HAND;
+			gWpnTimer = 0.0f;
+			gBulletCooldown = 0.0f;
+		}
+		computeActionPose(); // keep pose numbers fresh
 		return;
 	}
+
 }
 
 static void drawGroundImpactRing() {
@@ -839,6 +942,30 @@ void action() {
 	}
 
 	updateWeapon(dt);
+	// ---- projectiles ----
+	if (!gBullets.empty()) {
+		const float drag = 0.0f;     // set small value (e.g. 0.4f) if you want slowdown
+		const float grav = 0.0f;     // set to e.g. 4.0f for arcing shots
+		for (size_t i = 0; i < gBullets.size(); ) {
+			Bullet& b = gBullets[i];
+			// physics
+			b.v[1] -= grav * dt;
+			b.v[0] *= (1.0f - drag * dt);
+			b.v[1] *= (1.0f - drag * dt);
+			b.v[2] *= (1.0f - drag * dt);
+			b.p[0] += b.v[0] * dt;
+			b.p[1] += b.v[1] * dt;
+			b.p[2] += b.v[2] * dt;
+			b.life -= dt;
+
+			// cheap ground clip (optional)
+			if (b.p[1] < GROUND_Y + 0.01f) { b.p[1] = GROUND_Y + 0.01f; b.life = fminf(b.life, 0.08f); }
+
+			if (b.life <= 0.0f) gBullets.erase(gBullets.begin() + i);
+			else ++i;
+		}
+	}
+
 	if (gImpactTimer > 0.0f) {
 		gImpactTimer -= dt;
 		if (gImpactTimer < 0.0f) gImpactTimer = 0.0f;
@@ -1859,6 +1986,20 @@ static void drawTridentHeldPose() {
 	// ... existing rotations that orient the weapon in the right hand ...
 
 	GLfloat M[16]; glGetFloatv(GL_MODELVIEW_MATRIX, M);
+
+	// --- compute a muzzle point & forward dir in world space ---
+// local points in the weapon's current local frame:
+	float p0L[3] = { 0.0f,  0.00f,  0.60f };  // ~center/guard area (tweak Z if you want)
+	float p1L[3] = { 0.0f,  0.00f,  1.60f };  // forward along local +Z
+
+	mulPointM4(M, p0L, gMuzzleW);
+	float tipW[3]; mulPointM4(M, p1L, tipW);
+	gMuzzleDirW[0] = tipW[0] - gMuzzleW[0];
+	gMuzzleDirW[1] = tipW[1] - gMuzzleW[1];
+	gMuzzleDirW[2] = tipW[2] - gMuzzleW[2];
+	norm3f(gMuzzleDirW[0], gMuzzleDirW[1], gMuzzleDirW[2]);
+
+
 	float leftGripLocal[3] = { 0.0f, 0.0f, 1.15f };  // along local +Z from the right-hand grip
 	mulPointM4(M, leftGripLocal, gOffhandTargetW);
 	gOffhandActive = true;
@@ -3445,15 +3586,9 @@ void poseidon() {
 	
 
 
-	// C water trail (world-space)
-	renderWaterTrail();
-	if (gWpnState == WPN_X_SWEEP) {
-		glPushMatrix();
-		glTranslatef(xPosition, yPosition, zPosition);
-		glRotatef(rotateY + actTorsoYaw, 0, 1, 0);  
-		drawShockwave(6.8f + 1.2f * gWpnCharge);
-		glPopMatrix();
-	}
+	
+
+
 
 	// Z Hit effect
 	drawGroundImpactRing();
@@ -3469,6 +3604,18 @@ void poseidon() {
 	glPopMatrix();
 
 	glPopMatrix();
+
+	// C water trail (world-space)
+	renderWaterTrail();
+	if (gWpnState == WPN_X_SWEEP) {
+		glPushMatrix();
+		glTranslatef(xPosition, yPosition, zPosition);
+		glRotatef(rotateY + actTorsoYaw, 0, 1, 0);
+		drawShockwave(6.8f + 1.2f * gWpnCharge);
+		glPopMatrix();
+	}
+	renderBullets();
+
 
 	glDeleteTextures(1, &textureArr[0]);
 	glDeleteTextures(1, &textureArr[1]);
