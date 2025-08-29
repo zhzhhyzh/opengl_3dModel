@@ -65,4 +65,5 @@ C:\Users\henry\source\repos\asg\asg\main.cpp(4115,15): warning C4305: 'argument'
 C:\Users\henry\source\repos\asg\asg\main.cpp(4193,23): warning C4305: 'argument': truncation from 'double' to 'GLclampf'
 C:\Users\henry\source\repos\asg\asg\main.cpp(4193,19): warning C4305: 'argument': truncation from 'double' to 'GLclampf'
 C:\Users\henry\source\repos\asg\asg\main.cpp(4193,15): warning C4305: 'argument': truncation from 'double' to 'GLclampf'
+  LINK : C:\Users\henry\source\repos\asg\x64\Debug\asg.exe not found or not built by the last incremental link; performing full link
   asg.vcxproj -> C:\Users\henry\source\repos\asg\x64\Debug\asg.exe
