@@ -3055,7 +3055,7 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	const float LEG_PITCH = 3.5f;                 // a touch forward
 
 	glPushMatrix();
-	glTranslatef(xHip, yHip, zHip );
+	glTranslatef(xHip, yHip, zHip + 2);
 
 	// blend deltoid-like hip cap into torso (prevents gap)
 	glPushMatrix();
