@@ -21,6 +21,7 @@
 #define MP3_ACTION_C L"actionC.mp3"
 #define MP3_WALK     L"walk.mp3"
 #define WINDOW_TITLE "Poseidon"
+#define GL_CLAMP_TO_EDGE 0x812F
 
 //Mouse Move
 static int lastX = -1;
@@ -36,7 +37,7 @@ float rotateX = 0;
 float rotateY = 0;
 int textureChange = 1;
 bool changing = false;
-float OLeft = -10.0, ORight = 10.0, ODown = -10.0, OUp = 10.0, ONear = -10.0, OFar = 10.0;
+float OLeft = -20.0, ORight = 20.0, ODown = -20.0, OUp = 20.0, ONear = -20.0, OFar = 20.0;
 float xPosition = 0.0f, yPosition = 0.0f, zPosition = 0.05f;
 
 //Left leg
@@ -208,6 +209,117 @@ GLuint loadTexture(LPCSTR filename) {
 
 	return texture;
 }
+
+GLuint gSky[6] = { 0,0,0,0,0,0 };  // +X, -X, +Y, -Y, +Z, -Z
+
+static void loadSkyboxTextures() {
+	gSky[0] = loadTexture("side.bmp");   // +X
+	gSky[1] = loadTexture("rSide.bmp");    // -X
+	gSky[2] = loadTexture("floor.bmp");     // +Y
+	gSky[3] = loadTexture("top.bmp");  // -Y
+	gSky[4] = loadTexture("back.bmp");   // +Z
+	gSky[5] = loadTexture("front.bmp");    // -Z
+
+	for (int i = 0;i < 6;++i) {
+		glBindTexture(GL_TEXTURE_2D, gSky[i]);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);          // or mipmaps if you have them
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);         // avoid seams
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	}
+	glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+
+static void drawSkybox(float halfSize) {
+	glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT | GL_DEPTH_BUFFER_BIT | GL_POLYGON_BIT | GL_CURRENT_BIT);
+	glDisable(GL_LIGHTING); glDisable(GL_FOG);
+	glEnable(GL_TEXTURE_2D); 
+	glEnable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
+	glEnable(GL_CULL_FACE); glCullFace(GL_FRONT);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE); // or keep MODULATE and set white
+	glColor3f(1, 1, 1); // ensure no tint
+
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	GLfloat mv[16]; glGetFloatv(GL_MODELVIEW_MATRIX, mv);
+	mv[12] = mv[13] = mv[14] = 0.0f; glLoadMatrixf(mv);
+	const float s = halfSize;
+	{
+		GLfloat mv[16];
+		glGetFloatv(GL_MODELVIEW_MATRIX, mv);
+		mv[12] = mv[13] = mv[14] = 0.0f;  // remove translation
+		glLoadMatrixf(mv);
+
+		const float s = halfSize;
+
+		// +X (right)
+		glBindTexture(GL_TEXTURE_2D, gSky[0]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(+s, -s, -s);
+		glTexCoord2f(1, 0); glVertex3f(+s, -s, +s);
+		glTexCoord2f(1, 1); glVertex3f(+s, +s, +s);
+		glTexCoord2f(0, 1); glVertex3f(+s, +s, -s);
+		glEnd();
+
+		// -X (left)
+		glBindTexture(GL_TEXTURE_2D, gSky[1]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(-s, -s, +s);
+		glTexCoord2f(1, 0); glVertex3f(-s, -s, -s);
+		glTexCoord2f(1, 1); glVertex3f(-s, +s, -s);
+		glTexCoord2f(0, 1); glVertex3f(-s, +s, +s);
+		glEnd();
+
+		// +Y (top)
+		glBindTexture(GL_TEXTURE_2D, gSky[2]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(-s, +s, -s);
+		glTexCoord2f(1, 0); glVertex3f(+s, +s, -s);
+		glTexCoord2f(1, 1); glVertex3f(+s, +s, +s);
+		glTexCoord2f(0, 1); glVertex3f(-s, +s, +s);
+		glEnd();
+
+		// -Y (bottom)
+		glBindTexture(GL_TEXTURE_2D, gSky[3]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(-s, -s, +s);
+		glTexCoord2f(1, 0); glVertex3f(+s, -s, +s);
+		glTexCoord2f(1, 1); glVertex3f(+s, -s, -s);
+		glTexCoord2f(0, 1); glVertex3f(-s, -s, -s);
+		glEnd();
+
+		// +Z (front)
+		glBindTexture(GL_TEXTURE_2D, gSky[4]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(+s, -s, +s);
+		glTexCoord2f(1, 0); glVertex3f(-s, -s, +s);
+		glTexCoord2f(1, 1); glVertex3f(-s, +s, +s);
+		glTexCoord2f(0, 1); glVertex3f(+s, +s, +s);
+		glEnd();
+
+		// -Z (back)
+		glBindTexture(GL_TEXTURE_2D, gSky[5]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(-s, -s, -s);
+		glTexCoord2f(1, 0); glVertex3f(+s, -s, -s);
+		glTexCoord2f(1, 1); glVertex3f(+s, +s, -s);
+		glTexCoord2f(0, 1); glVertex3f(-s, +s, -s);
+		glEnd();
+	}
+	glPopMatrix();
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glCullFace(GL_BACK); glDepthMask(GL_TRUE);
+	glPopAttrib();
+
+
+}
+
+
+
+
 // ===== Action pose offsets (added on top of walk pose) =====
 static float actTorsoPitch = 0, actTorsoYaw = 0, actTorsoRoll = 0;
 
@@ -1184,7 +1296,7 @@ void action() {
 	float speed = gWalking ? gWalkSpeed : 0.0f;
 
 	float minFreq = 0.25f;   // slow breathing (Hz)
-	float maxFreq = 1.2f;    // fast breathing (Hz)
+	float maxFreq = 1.5f;    // fast breathing (Hz)
 	breathFreq = minFreq + (maxFreq - minFreq) * (speed / 10.0f);
 	if (breathFreq > maxFreq) breathFreq = maxFreq;
 
@@ -4267,6 +4379,24 @@ void poseidon() {
 
 	glMatrixMode(GL_MODELVIEW);
 
+	//float skyHalf = 0.0f;
+	//if (isOrtho) {
+	//	// stay just inside the ortho box
+	//	skyHalf =  min(min(ORight, -OLeft),
+	//		min(min(OUp, -ODown),
+	//			min(OFar, -ONear)));
+	//	// e.g. with ±10 on all axes → use ~9.5
+	//}
+	//else {
+	//	// inside the perspective frustum: far / √3 is a safe bound
+	//	float nearZ = 1.0f, farZ = 200.0f;   // your gluPerspective values
+	//	skyHalf = min(farZ / 1.732f * 0.95f,  // keep corners inside far
+	//		max(nearZ + 0.5f, 50.0f)); // also keep it beyond the near plane
+	//	// e.g. ~110 is fine; 50 also works great.
+	//}
+	//	drawSkybox(skyHalf);
+
+	
 	glPushMatrix();
 	lighting();
 	glPopMatrix();
@@ -4411,7 +4541,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	//	make context current
 	if (!wglMakeCurrent(hdc, hglrc)) return false;
 	initQuadric();
-
+	loadSkyboxTextures();
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // not MIPMAP_LINEAR unless you build mipmaps
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	//--------------------------------
 	//	End initialization
 	//--------------------------------
