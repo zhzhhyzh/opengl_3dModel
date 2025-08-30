@@ -8,11 +8,18 @@
 #include <vector>
 #include <cmath>
 #include <map>
+#include <mmsystem.h>
 
 
-#define M_PI 3.14159265358979323846
+#pragma comment(lib, "winmm.lib")
 #pragma comment (lib, "OpenGL32.lib")
 #pragma comment (lib, "glu32.lib")
+
+#define M_PI 3.14159265358979323846
+#define MP3_ACTION_Z L"actionZ.mp3"
+#define MP3_ACTION_X L"actionX.mp3"
+#define MP3_ACTION_C L"actionC.mp3"
+#define MP3_WALK     L"walk.mp3"
 #define WINDOW_TITLE "Poseidon"
 
 //Mouse Move
@@ -123,6 +130,46 @@ static void destroyQuadric() {
 		gluDeleteQuadric(gQuadric);
 		gQuadric = nullptr;
 	}
+}
+
+// Open+play an MP3 once (non-blocking). 'alias' is any short unique name.
+static void playFxOnce(const wchar_t* alias, const wchar_t* filepath) {
+	wchar_t cmd[1024];
+
+	// Ensure any previous instance is closed
+	swprintf(cmd, 1024, L"stop %s", alias);  mciSendStringW(cmd, NULL, 0, NULL);
+	swprintf(cmd, 1024, L"close %s", alias); mciSendStringW(cmd, NULL, 0, NULL);
+
+	// Open & play (async). Type "mpegvideo" lets MCI handle MP3.
+	swprintf(cmd, 1024, L"open \"%s\" type mpegvideo alias %s", filepath, alias);
+	mciSendStringW(cmd, NULL, 0, NULL);
+
+	swprintf(cmd, 1024, L"play %s", alias);
+	mciSendStringW(cmd, NULL, 0, NULL);
+}
+
+// Start a looped MP3 (e.g., walking)
+static void startLoop(const wchar_t* alias, const wchar_t* filepath) {
+	wchar_t cmd[1024];
+
+	// If already open, just (re)play repeat
+	swprintf(cmd, 1024, L"status %s mode", alias);
+	wchar_t status[64] = { 0 };
+	if (mciSendStringW(cmd, status, 64, NULL) != 0) {
+		// not open → open it
+		swprintf(cmd, 1024, L"open \"%s\" type mpegvideo alias %s", filepath, alias);
+		mciSendStringW(cmd, NULL, 0, NULL);
+	}
+
+	swprintf(cmd, 1024, L"play %s repeat", alias);
+	mciSendStringW(cmd, NULL, 0, NULL);
+}
+
+// Stop & close a looped MP3 immediately (for key-up)
+static void stopAndClose(const wchar_t* alias) {
+	wchar_t cmd[1024];
+	swprintf(cmd, 1024, L"stop %s", alias);  mciSendStringW(cmd, NULL, 0, NULL);
+	swprintf(cmd, 1024, L"close %s", alias); mciSendStringW(cmd, NULL, 0, NULL);
 }
 
 
@@ -255,10 +302,23 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
 	case WM_KEYUP:
 	{
-		if (wParam == 'W') gKeyW = false;
-		else if (wParam == 'A') gKeyA = false;
-		else if (wParam == 'S') gKeyS = false;
-		else if (wParam == 'D') gKeyD = false;
+		if (wParam == 'W') 
+		{
+			gKeyW = false;
+			stopAndClose(L"walk");
+		}
+		else if (wParam == 'A') {
+			gKeyA = false;
+			stopAndClose(L"walk");
+		}
+		else if (wParam == 'S') {
+			gKeyS = false;
+			stopAndClose(L"walk");
+		}
+		else if (wParam == 'D') {
+			gKeyD = false;
+			stopAndClose(L"walk");
+		}
 		else if (wParam == 'X') { if (gWpnKeyXDown && gWpnState == WPN_X_CHARGING) { gWpnState = WPN_X_SWEEP; gWpnTimer = 0; } gWpnKeyXDown = false; }
 
 		// if no movement keys are down, stop walking
@@ -377,13 +437,16 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 				zJumpStartY = yPosition;   // <-- record current Y for the jump arc
 				zImpactSpawned = false;    // <-- we haven’t hit the ground yet
 				gImpactTimer = 0.0f;       // <-- reset shock ring FX
+				playFxOnce(L"fxZ", MP3_ACTION_Z);
 			}
 		}
 
-		else if (wParam == 'X') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_X_CHARGING; gWpnTimer = 0; gWpnCharge = 0; gWpnKeyXDown = true; } }
+		else if (wParam == 'X') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_X_CHARGING; gWpnTimer = 0; gWpnCharge = 0; gWpnKeyXDown = true;  playFxOnce(L"fxX", MP3_ACTION_X);
+ } }
 
 
-		else if (wParam == 'C') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_C_WATERSKIM; gWpnTimer = 0; gWaterTrail.clear(); } }
+		else if (wParam == 'C') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_C_WATERSKIM; gWpnTimer = 0; gWaterTrail.clear();     playFxOnce(L"fxC", MP3_ACTION_C);
+} }
 
 		
 		break;
@@ -902,7 +965,7 @@ static void computeActionPose()
 			float u = easeInOut(t / tRaise);
 			// raise both hands overhead, slight lean back
 			//actTorsoPitch += lerp(0, -8, u);
-			actRShoulderPitch += lerp(0, -100, u);  // arms up
+			actRShoulderPitch += lerp(0, -80, u);  // arms up
 			actLShoulderPitch += lerp(0, -30, u);
 		
 			/*actHipPitchL += lerp(0, 6, u);
@@ -913,7 +976,7 @@ static void computeActionPose()
 		else {
 			// hold high while firing; add a little tremble
 			float s = sinf((t - tRaise) * 18.0f) * 3.0f;
-			actRShoulderPitch += -100.0f;
+			actRShoulderPitch += -80.0f;
 			actLShoulderPitch += -30.0f;
 			
 			//actTorsoPitch += -6.0f;
@@ -1115,7 +1178,7 @@ void action() {
 			const float charRadius = 3.0f;        // tweak to your model half-width
 			xPosition = clampf(xPosition, OLeft + charRadius, ORight - charRadius);
 			zPosition = clampf(zPosition, ONear + charRadius, OFar - charRadius);
-
+			startLoop(L"walk", MP3_WALK);
 	}
 	// === BREATHING FREQUENCY CONTROL ===
 	float speed = gWalking ? gWalkSpeed : 0.0f;
@@ -2065,7 +2128,8 @@ static void drawTridentGeo(float lengthScale = 1.0f) {
 	// Handle (longer by default)
 	const float handleH = 7.2f * lengthScale;   
 	glPushMatrix();
-	colBlue();  quadBox(0.22f, handleH, 0.22f);
+	colBlue();  
+	quadBox(0.22f, handleH, 0.22f);
 	// leather bands
 	glTranslatef(0, -handleH * 0.42f, 0);
 	for (int i = 0;i < 4;++i) {
@@ -3079,15 +3143,11 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 
 
 	// --- sarong panel that follows this leg ---
-	//glPushMatrix();
-	//glTranslatef(0.0f * side, 0.0f,0);
-	//glRotatef(8.0f * side, 0, 1, 0);
 	glColor3f(0.83f, 0.69f, 0.22f);
 	drawSarongPanel(/*halfW*/0.53f, /*len*/THIGH_LEN * 0.75f, /*halfT*/0.53f);
 	// restore skin color for the leg
 	//if (glIsEnabled(GL_LIGHTING)) glColor3f(1, 1, 1); else 
 		glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
-	//glPopMatrix();
 	// -----------------------------------------
 
 	// THIGH (slight inward taper)
