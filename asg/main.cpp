@@ -21,6 +21,7 @@
 #define MP3_ACTION_C L"actionC.mp3"
 #define MP3_WALK     L"walk.mp3"
 #define WINDOW_TITLE "Poseidon"
+#define GL_CLAMP_TO_EDGE 0x812F
 
 //Mouse Move
 static int lastX = -1;
@@ -208,6 +209,118 @@ GLuint loadTexture(LPCSTR filename) {
 
 	return texture;
 }
+
+GLuint gSky[6] = { 0,0,0,0,0,0 };  // +X, -X, +Y, -Y, +Z, -Z
+
+static void loadSkyboxTextures() {
+	gSky[0] = loadTexture("side.bmp");   // +X
+	gSky[1] = loadTexture("rSide.bmp");    // -X
+	gSky[2] = loadTexture("floor.bmp");     // +Y
+	gSky[3] = loadTexture("top.bmp");  // -Y
+	gSky[4] = loadTexture("back.bmp");   // +Z
+	gSky[5] = loadTexture("front.bmp");    // -Z
+
+	for (int i = 0;i < 6;++i) {
+		glBindTexture(GL_TEXTURE_2D, gSky[i]);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);          // or mipmaps if you have them
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);         // avoid seams
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	}
+	glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+
+static void drawSkybox(float halfSize) {
+	glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT | GL_DEPTH_BUFFER_BIT | GL_POLYGON_BIT | GL_CURRENT_BIT);
+	glDisable(GL_LIGHTING);
+	glDisable(GL_FOG);
+	glEnable(GL_TEXTURE_2D); 
+	glEnable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
+	glEnable(GL_CULL_FACE); glCullFace(GL_FRONT);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE); // or keep MODULATE and set white
+	glColor3f(1, 1, 1); // ensure no tint
+
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	GLfloat mv[16]; glGetFloatv(GL_MODELVIEW_MATRIX, mv);
+	mv[12] = mv[13] = mv[14] = 0.0f; glLoadMatrixf(mv);
+	const float s = halfSize;
+	{
+		GLfloat mv[16];
+		glGetFloatv(GL_MODELVIEW_MATRIX, mv);
+		mv[12] = mv[13] = mv[14] = 0.0f;  // remove translation
+		glLoadMatrixf(mv);
+
+		const float s = halfSize;
+
+		// +X (right)
+		glBindTexture(GL_TEXTURE_2D, gSky[0]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(+s, -s, -s);
+		glTexCoord2f(1, 0); glVertex3f(+s, -s, +s);
+		glTexCoord2f(1, 1); glVertex3f(+s, +s, +s);
+		glTexCoord2f(0, 1); glVertex3f(+s, +s, -s);
+		glEnd();
+
+		// -X (left)
+		glBindTexture(GL_TEXTURE_2D, gSky[1]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(-s, -s, +s);
+		glTexCoord2f(1, 0); glVertex3f(-s, -s, -s);
+		glTexCoord2f(1, 1); glVertex3f(-s, +s, -s);
+		glTexCoord2f(0, 1); glVertex3f(-s, +s, +s);
+		glEnd();
+
+		// +Y (top)
+		glBindTexture(GL_TEXTURE_2D, gSky[2]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(-s, +s, -s);
+		glTexCoord2f(1, 0); glVertex3f(+s, +s, -s);
+		glTexCoord2f(1, 1); glVertex3f(+s, +s, +s);
+		glTexCoord2f(0, 1); glVertex3f(-s, +s, +s);
+		glEnd();
+
+		// -Y (bottom)
+		glBindTexture(GL_TEXTURE_2D, gSky[3]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(-s, -s, +s);
+		glTexCoord2f(1, 0); glVertex3f(+s, -s, +s);
+		glTexCoord2f(1, 1); glVertex3f(+s, -s, -s);
+		glTexCoord2f(0, 1); glVertex3f(-s, -s, -s);
+		glEnd();
+
+		// +Z (front)
+		glBindTexture(GL_TEXTURE_2D, gSky[4]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(+s, -s, +s);
+		glTexCoord2f(1, 0); glVertex3f(-s, -s, +s);
+		glTexCoord2f(1, 1); glVertex3f(-s, +s, +s);
+		glTexCoord2f(0, 1); glVertex3f(+s, +s, +s);
+		glEnd();
+
+		// -Z (back)
+		glBindTexture(GL_TEXTURE_2D, gSky[5]);
+		glBegin(GL_QUADS);
+		glTexCoord2f(0, 0); glVertex3f(-s, -s, -s);
+		glTexCoord2f(1, 0); glVertex3f(+s, -s, -s);
+		glTexCoord2f(1, 1); glVertex3f(+s, +s, -s);
+		glTexCoord2f(0, 1); glVertex3f(-s, +s, -s);
+		glEnd();
+	}
+	glPopMatrix();
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glCullFace(GL_BACK); glDepthMask(GL_TRUE);
+	glPopAttrib();
+
+
+}
+
+
+
+
 // ===== Action pose offsets (added on top of walk pose) =====
 static float actTorsoPitch = 0, actTorsoYaw = 0, actTorsoRoll = 0;
 
@@ -1184,7 +1297,7 @@ void action() {
 	float speed = gWalking ? gWalkSpeed : 0.0f;
 
 	float minFreq = 0.25f;   // slow breathing (Hz)
-	float maxFreq = 1.2f;    // fast breathing (Hz)
+	float maxFreq = 1.5f;    // fast breathing (Hz)
 	breathFreq = minFreq + (maxFreq - minFreq) * (speed / 10.0f);
 	if (breathFreq > maxFreq) breathFreq = maxFreq;
 
@@ -1340,7 +1453,6 @@ float sampleHalfDepthB(const EllipseProfile* prof, int n, float yn01) {
 
 // Draw a guide polyline on the torso surface at fixed theta (e.g., front center = PI/2)
 void drawTorsoLineAtTheta(const EllipseProfile* prof, int n, float height, float theta, int steps = 32) {
-	//glDisable(GL_LIGHTING);
 	glLineWidth(2.0f);
 	glColor3f(0, 0, 0);
 	glBegin(GL_LINE_STRIP);
@@ -1367,7 +1479,6 @@ void drawTorsoLineAtTheta(const EllipseProfile* prof, int n, float height, float
 		glVertex3f(x, y, z);
 	}
 	glEnd();
-	//glEnable(GL_LIGHTING);
 }
 
 // Interpolate half-width a(y) like we already do for b(y)
@@ -1482,11 +1593,9 @@ void body() {
 		SKIN_LIGHT_TAN.base[1],
 		SKIN_LIGHT_TAN.base[2]);
 
-	//glEnable(GL_LIGHTING);          // shaded
 	drawLoftedBody(TORSO, TORSO_N, /*height*/6.2f, /*slices*/72);
 
 	// Optional: wireframe overlay to inspect flow
-	//glDisable(GL_LIGHTING);
 	if (showModelLines) {
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 		glColor3f(0, 0, 0);
@@ -1494,7 +1603,6 @@ void body() {
 		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	}
 
-	//glEnable(GL_LIGHTING);
 
 	glPopMatrix();
 	glPushMatrix();
@@ -1551,17 +1659,14 @@ void body() {
 		glColor3f(SKIN_FAIR_NEUTRAL.base[0],
 			SKIN_FAIR_NEUTRAL.base[1],
 			SKIN_FAIR_NEUTRAL.base[2]);
-		//glEnable(GL_LIGHTING);
 		drawEllipsoid(d.w, d.h, d.depth, 24);
 
 		//if (showModelLines) {
-			/*GLboolean wasLit = glIsEnabled(GL_LIGHTING);
-			glDisable(GL_LIGHTING);*/
+			
 			glLineWidth(1.4f);
 			glColor3f(0.05f, 0.05f, 0.05f);
 			// outline in the ellipsoid's "front" plane (slight +Z so it doesn't z-fight)
 			drawEllipseOutlineXY(d.w, d.h, d.depth * 0.04f, 48);
-			//if (wasLit) glEnable(GL_LIGHTING);
 		//}
 		glPopMatrix();
 		};
@@ -1612,8 +1717,8 @@ void body() {
 		// ===================== RIGHT SHOULDER EPaulette (armor + fringe) =====================
 		{
 			glPushMatrix();
-			glTranslatef(-3.95, 0.65, 0.65);
-			glRotatef(-5, 1, 0, 0);
+			glTranslatef(-3.95, 0.5, 0.25);
+			//glRotatef(-5, 1, 0, 0);
 			glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_POLYGON_BIT);
 			//glDisable(GL_TEXTURE_2D);
 
@@ -1647,8 +1752,8 @@ void body() {
 
 			glPushMatrix();
 			glTranslatef(sx, sy, sz);
-			glRotatef(-12.f, 0, 1, 0);    // open a bit to the front
-			glRotatef(+8.f, 1, 0, 0);    // slight down tilt
+			//glRotatef(-12.f, 0, 1, 0);    // open a bit to the front
+			//glRotatef(+8.f, 1, 0, 0);    // slight down tilt
 
 			// colors (gold-ish)
 			const GLfloat GOLD[3] = { 0.85f, 0.72f, 0.25f };
@@ -1815,13 +1920,11 @@ void body() {
 			SKIN_FAIR_NEUTRAL.base[2]);
 		drawEllipsoid(L.w, L.h, L.d, 36);
 		if (showModelLines) {
-			/*GLboolean wasLit = glIsEnabled(GL_LIGHTING);
-			glDisable(GL_LIGHTING);*/
+			
 			glLineWidth(1.6f);
 			glColor3f(0.08f, 0.08f, 0.08f);
 			// the lobe has a pre-scale; keep outline on the same local XY plane
 			drawEllipseOutlineXY(L.w, L.h, L.d * 0.05f, 56);
-			//if (wasLit) glEnable(GL_LIGHTING);
 		}
 		glPopMatrix();
 		};
@@ -1853,7 +1956,6 @@ void body() {
 	}
 
 	// Lower pec curve (soft guide where pec meets upper abs)
-	//glDisable(GL_LIGHTING);
 	glLineWidth(1.8f);
 	glColor3f(0.15f, 0.15f, 0.15f);
 	glBegin(GL_LINE_STRIP);
@@ -1868,7 +1970,6 @@ void body() {
 		glVertex3f(x, y, z);
 	}
 	glEnd();
-	//glEnable(GL_LIGHTING);
 
 	// ======== NIPPLES (areola + papilla) ========
 	// Anatomical ballpark: ~0.57–0.60 up the torso height, ~0.5–0.6 of half-width from center.
@@ -1993,10 +2094,8 @@ static void drawCapsuleAlongZ(float r0, float r1, float h, int slices = 28) {
 
 	// Optional model lines
 	if (showModelLines) {
-		/*GLboolean wasLit = glIsEnabled(GL_LIGHTING);
-		glDisable(GL_LIGHTING);*/
+		
 		drawCapsuleWireOverlayZ(r0, r1, h);
-		//if (wasLit) glEnable(GL_LIGHTING);
 	}
 }
 
@@ -2018,7 +2117,6 @@ static void pushDarken(float k = 0.96f) {
 }
 
 // --- Helper: know if lighting is on (to choose glColor vs material) ---
-//static inline bool lightingEnabled() { return glIsEnabled(GL_LIGHTING) == GL_TRUE; }
 // ===== Helpers (only GL_QUADS / GL_TRIANGLES) =====
 static inline void nrm(float x, float y, float z) { glNormal3f(x, y, z); }
 
@@ -2290,7 +2388,7 @@ typedef void (*DrawFunc)();
 
 static void drawWireOverlay(DrawFunc func) {
 	glPushAttrib(GL_ENABLE_BIT | GL_POLYGON_BIT | GL_LINE_BIT);
-	glDisable(GL_LIGHTING);              // lines not shaded
+	//glDisable(GL_LIGHTING);              // lines not shaded
 	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 	glEnable(GL_POLYGON_OFFSET_LINE);    // avoid z-fighting
 	glPolygonOffset(-1.0f, -1.0f);
@@ -2593,7 +2691,6 @@ static void drawArmDown(int side)
 	const SkinPreset& SKIN = SKIN_LIGHT_TAN;
 	applySkinMaterial(SKIN.base);
 	glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
-	//if (!lightingEnabled()) glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]); else glColor3f(1, 1, 1);
 
 	// placement at shoulder
 	const float SHOULDER_YN = 0.78f;
@@ -3089,7 +3186,6 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	// match body skin
 	const SkinPreset& SKIN = SKIN_LIGHT_TAN;
 	applySkinMaterial(SKIN.base);
-	//if (glIsEnabled(GL_LIGHTING)) glColor3f(1, 1, 1); else 
 		glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
 
 	// anchor to hip ring
@@ -3146,7 +3242,6 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	glColor3f(0.83f, 0.69f, 0.22f);
 	drawSarongPanel(/*halfW*/0.53f, /*len*/THIGH_LEN * 0.75f, /*halfT*/0.53f);
 	// restore skin color for the leg
-	//if (glIsEnabled(GL_LIGHTING)) glColor3f(1, 1, 1); else 
 		glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
 	// -----------------------------------------
 
@@ -3263,7 +3358,6 @@ static void drawSarongHuggingTorso(float pelvisY)
 
 	// Optional: show model lines for the sarong (V to toggle)
 	if (showModelLines) {
-		//glDisable(GL_LIGHTING);
 		glLineWidth(1.2f);
 		glColor3f(0, 0, 0);
 
@@ -3289,7 +3383,6 @@ static void drawSarongHuggingTorso(float pelvisY)
 		}
 		glEnd();
 
-		//glEnable(GL_LIGHTING);
 	}
 }
 
@@ -3315,8 +3408,7 @@ static void headEllipseXY(float rx, float ry, float z=0.0f, int seg=72){
 
 // longitudinal guides on an ellipsoid (very light, good for modeling)
 static void headGuides(float rx, float ry, float rz){
-	/*GLboolean lit = glIsEnabled(GL_LIGHTING);
-	glDisable(GL_LIGHTING);*/
+
 	glLineWidth(1.2f);
 	glColor3f(0.04f,0.04f,0.04f);
 
@@ -3353,7 +3445,6 @@ static void headGuides(float rx, float ry, float rz){
 		glEnd();
 	}
 
-	//if(lit) glEnable(GL_LIGHTING);
 }
 
 // tiny helper: ear (flattened ellipsoid, slight tilt)
@@ -3869,7 +3960,6 @@ void head(){
 	// materials/colors consistent with body
 	const SkinPreset& SKIN = SKIN_LIGHT_TAN;
 	applySkinMaterial(SKIN.base);
-	//if (glIsEnabled(GL_LIGHTING)) glColor3f(1,1,1); else                       
 		glColor3f(SKIN.base[0],SKIN.base[1],SKIN.base[2]);
 
 	// overall proportions (tuned to your screenshot scale)
@@ -4267,6 +4357,24 @@ void poseidon() {
 
 	glMatrixMode(GL_MODELVIEW);
 
+	//float skyHalf = 0.0f;
+	//if (isOrtho) {
+	//	// stay just inside the ortho box
+	//	skyHalf =  min(min(ORight, -OLeft),
+	//		min(min(OUp, -ODown),
+	//			min(OFar, -ONear)));
+	//	// e.g. with ±10 on all axes → use ~9.5
+	//}
+	//else {
+	//	// inside the perspective frustum: far / √3 is a safe bound
+	//	float nearZ = 1.0f, farZ = 200.0f;   // your gluPerspective values
+	//	skyHalf = min(farZ / 1.732f * 0.95f,  // keep corners inside far
+	//		max(nearZ + 0.5f, 50.0f)); // also keep it beyond the near plane
+	//	// e.g. ~110 is fine; 50 also works great.
+	//}
+	//	drawSkybox(skyHalf);
+
+	
 	glPushMatrix();
 	lighting();
 	glPopMatrix();
@@ -4305,6 +4413,7 @@ void poseidon() {
 	glRotatef(actTorsoPitch, 1, 0, 0);
 	glRotatef(actTorsoRoll, 0, 0, 1);
 
+	drawSarongHuggingTorso(gPelvisY);
 
 	glPushMatrix();
 	glTranslatef(0, -4, 0);
@@ -4327,8 +4436,6 @@ void poseidon() {
 	drawGroundImpactRing();
 
 
-	// draw pelvis-anchored belt/back once, using last hip ring values, continuous skirt that hugs the body at the top (no gap)
-	drawSarongHuggingTorso(gPelvisY);
 
 	
 	
@@ -4411,7 +4518,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	//	make context current
 	if (!wglMakeCurrent(hdc, hglrc)) return false;
 	initQuadric();
-
+	loadSkyboxTextures();
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // not MIPMAP_LINEAR unless you build mipmaps
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	//--------------------------------
 	//	End initialization
 	//--------------------------------
