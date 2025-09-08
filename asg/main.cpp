@@ -72,12 +72,12 @@ bool gKeyW = false, gKeyA = false, gKeyS = false, gKeyD = false;
 
 
 //Lighting
-float amb[3] = { 1.0,0,0 }; // red color ambient light
-float posA[3] = { 0.8,0.0,0.0 }; // amb light pos(x,y,z)
-float dif[4] = { 1, 1.0, 1.0, 1.0 }; // Green diffuse light (RGBA)
-float posD[4] = { 0.0, 0.0, 0.0, 1.0 }; // Diffuse light position (x, y, z, w)
-float ambM[3] = { 1.0,0.0,0 }; // blue color ambient material
-float difM[3] = { 1.0,1.0,1.0 }; // blue color diffuse material
+float lightPos1[] = { 1,1,0 };
+float lightDiff1[] = { 1,0,0 }; //red
+float light1MoveSpeed = 0.6;
+float diffuseLight[] = { 1.0f, 1.0f, 1.0f };  // Red color
+float ambientLight[] = { 0.2f, 0.2f, 0.2f };  // Soft ambient light
+float specularLight[] = { 1.0f, 1.0f, 1.0f, 1.0f }; // White specular 
 bool isLightOn = false;
 float angle = 0.0;
 
@@ -511,22 +511,22 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			isLightOn = !isLightOn;
 		}
 		else if (wParam == 'U') {
-			posD[1] += 0.06;
+			lightPos1[1] += light1MoveSpeed;
 		}
 		else if (wParam == 'J') {
-			posD[1] -= 0.06;
+			lightPos1[1] -= light1MoveSpeed;
 		}
 		else if (wParam == 'H') {
-			posD[0] -= 0.06;
+			lightPos1[0] -= light1MoveSpeed;
 		}
 		else if (wParam == 'K') {
-			posD[0] += 0.06;
+			lightPos1[0] += light1MoveSpeed;
 		}
 		else if (wParam == 'Y') {
-			posD[2] -= 0.06;
+			lightPos1[2] -= light1MoveSpeed;
 		}
 		else if (wParam == 'I') {
-			posD[2] += 0.06;
+			lightPos1[2] += light1MoveSpeed;
 		}
 	
 		else if (wParam == 'V') showModelLines = !showModelLines;
@@ -581,34 +581,35 @@ void projection() {
 
 void lighting() {
 	if (isLightOn) {
-		glEnable(GL_LIGHTING);     // enable lighting for the whole scene
+		glEnable(GL_LIGHTING);
+		glEnable(GL_LIGHT0);
+
+
+
+		glLightfv(GL_LIGHT0, GL_POSITION, lightPos1);
+		glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuseLight);
+		glLightfv(GL_LIGHT0, GL_AMBIENT, ambientLight);
+		//glLightfv(GL_LIGHT0, GL_SPECULAR, specularLight);
+
+		// Draw a small sphere to represent light position
+		glPushMatrix();
+		glDisable(GL_LIGHTING);  // Disable lighting for light source visualization
+		glTranslatef(lightPos1[0], lightPos1[1], lightPos1[2]);
+		glColor3f(1, 0, 0);  // white color for light source
+		GLUquadric* lightSphere = gluNewQuadric();
+		gluSphere(lightSphere, 0.05, 50, 50);
+		gluDeleteQuadric(lightSphere);
+		glEnable(GL_LIGHTING);
+		glPopMatrix();
+
+	
+
 	}
 	else {
 		glDisable(GL_LIGHTING);
 	}
-	// once at init
-	//glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);  // front faces only
-	//glEnable(GL_CULL_FACE);
-	//glCullFace(GL_BACK);
-	glFrontFace(GL_CCW);  // (CCW is GLU sphere default; keep consistent)
-	glEnable(GL_NORMALIZE); // you scale a lot; keep normals unit length
 
 
-	// Rotate the light
-	glPushMatrix(); // Save the current transformation matrix
-	glRotatef(angle, 0.0f, 0.0f, 1.0f); // Rotate around the Y-axis
-
-	//light 0 : white color ambient light at pos(0,0.8,0), above the sphere
-	glLightfv(GL_LIGHT0, GL_AMBIENT, amb);
-	glLightfv(GL_LIGHT0, GL_POSITION, posA);
-	//glEnable(GL_LIGHT0);
-
-	//light 1 : white color diffuse light at pos(0.8,0.0,0), right the sphere
-	glLightfv(GL_LIGHT1, GL_DIFFUSE, dif);
-	glLightfv(GL_LIGHT1, GL_POSITION, posD);
-	glEnable(GL_LIGHT1);
-
-	glPopMatrix();
 
 }
 
@@ -4352,7 +4353,15 @@ void poseidon() {
 	}
 		drawSkybox(skyHalf);
 
+		GLfloat matrix_amb[16] = { lightPos1[1],  0,  0, 0,
+								-lightPos1[0], 0,  -lightPos1[2], -1,
+								0,  0,  lightPos1[1],0,
+								0,  0,  0,lightPos1[1],
+		};
+
 	
+
+
 	glPushMatrix();
 	lighting();
 	glPopMatrix();
