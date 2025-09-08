@@ -1,3 +1,17 @@
 .vs/ 
 .vs/
 .vs/
+/.vs/
+/.vscode/
+/x64/
+/Debug/
+/Release/
+*.user
+*.suo
+*.vcxproj.user
+*.VC.db
+*.ipch
+*.obj
+*.pdb
+*.log
+*.exe
