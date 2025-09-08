@@ -1,31 +1,51 @@
 ﻿
-#include <Windows.h>
+#include <windows.h>
 #include <windowsx.h>
 #include <gl/GL.h>
 #include <gl/GLU.h>
-#include <math.h>
-#include <stdio.h>
-#include <vector>
+
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
+#include <vector>
 #include <map>
-#include <mmsystem.h>
+#include <string>
 
-
+// ==== Linker pragmas (Windows) ====
 #pragma comment(lib, "winmm.lib")
-#pragma comment (lib, "OpenGL32.lib")
-#pragma comment (lib, "glu32.lib")
+#pragma comment(lib, "OpenGL32.lib")
+#pragma comment(lib, "glu32.lib")
 
-#define M_PI 3.14159265358979323846
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
 #define MP3_ACTION_Z L"actionZ.mp3"
 #define MP3_ACTION_X L"actionX.mp3"
 #define MP3_ACTION_C L"actionC.mp3"
 #define MP3_WALK     L"walk.mp3"
 #define WINDOW_TITLE "Poseidon"
-#define GL_CLAMP_TO_EDGE 0x812F
+
+
+namespace Gfx {
+	// Prefer constexpr for compile-time constants
+	constexpr float PI = 3.14159265358979323846f;
+
+	inline float deg2rad(float d) { return d * (PI / 180.0f); }
+	inline float rad2deg(float r) { return r * (180.0f / PI); }
+
+	template<typename T>
+	inline T clamp(T v, T lo, T hi) { return (v < lo) ? lo : (v > hi) ? hi : v; }
+
+	inline void norm3(float& x, float& y, float& z) {
+		float m = std::sqrt(x * x + y * y + z * z);
+		if (m > 1e-8f) { x /= m; y /= m; z /= m; }
+	}
+}
 
 //Mouse Move
 static int lastX = -1;
 static int lastY = -1;
+
 //projection
 bool isOrtho = true;
 float ty = 0, tx = 0, tz = 0, tSpeed = 1;
@@ -120,7 +140,6 @@ static void initQuadric() {
 	if (!gQuadric) {
 		gQuadric = gluNewQuadric();
 		gluQuadricDrawStyle(gQuadric, GLU_FILL);
-		gluQuadricDrawStyle(gQuadric, GLU_FILL);
 		gluQuadricNormals(gQuadric, GLU_SMOOTH);
 		gluQuadricTexture(gQuadric, GL_FALSE);
 	}
@@ -133,44 +152,40 @@ static void destroyQuadric() {
 	}
 }
 
-// Open+play an MP3 once (non-blocking). 'alias' is any short unique name.
-static void playFxOnce(const wchar_t* alias, const wchar_t* filepath) {
-	wchar_t cmd[1024];
-
-	// Ensure any previous instance is closed
-	swprintf(cmd, 1024, L"stop %s", alias);  mciSendStringW(cmd, NULL, 0, NULL);
-	swprintf(cmd, 1024, L"close %s", alias); mciSendStringW(cmd, NULL, 0, NULL);
-
-	// Open & play (async). Type "mpegvideo" lets MCI handle MP3.
-	swprintf(cmd, 1024, L"open \"%s\" type mpegvideo alias %s", filepath, alias);
-	mciSendStringW(cmd, NULL, 0, NULL);
-
-	swprintf(cmd, 1024, L"play %s", alias);
-	mciSendStringW(cmd, NULL, 0, NULL);
-}
-
-// Start a looped MP3 (e.g., walking)
-static void startLoop(const wchar_t* alias, const wchar_t* filepath) {
-	wchar_t cmd[1024];
-
-	// If already open, just (re)play repeat
-	swprintf(cmd, 1024, L"status %s mode", alias);
-	wchar_t status[64] = { 0 };
-	if (mciSendStringW(cmd, status, 64, NULL) != 0) {
-		// not open → open it
-		swprintf(cmd, 1024, L"open \"%s\" type mpegvideo alias %s", filepath, alias);
-		mciSendStringW(cmd, NULL, 0, NULL);
+//Audio
+// ==== Minimal MCI wrapper ====
+namespace Audio {
+	inline void send(const wchar_t* cmd) {
+		mciSendStringW(cmd, nullptr, 0, nullptr);
 	}
-
-	swprintf(cmd, 1024, L"play %s repeat", alias);
-	mciSendStringW(cmd, NULL, 0, NULL);
-}
-
-// Stop & close a looped MP3 immediately (for key-up)
-static void stopAndClose(const wchar_t* alias) {
-	wchar_t cmd[1024];
-	swprintf(cmd, 1024, L"stop %s", alias);  mciSendStringW(cmd, NULL, 0, NULL);
-	swprintf(cmd, 1024, L"close %s", alias); mciSendStringW(cmd, NULL, 0, NULL);
+	inline bool isOpen(const wchar_t* alias) {
+		wchar_t status[64] = { 0 };
+		wchar_t cmd[128]; swprintf(cmd, 128, L"status %s mode", alias);
+		return mciSendStringW(cmd, status, 64, nullptr) == 0;
+	}
+	inline void ensureOpen(const wchar_t* alias, const wchar_t* file) {
+		if (!isOpen(alias)) {
+			wchar_t cmd[512];
+			swprintf(cmd, 512, L"open \"%s\" type mpegvideo alias %s", file, alias);
+			send(cmd);
+		}
+	}
+	inline void close(const wchar_t* alias) {
+		wchar_t cmd[64];
+		swprintf(cmd, 64, L"stop %s", alias);  send(cmd);
+		swprintf(cmd, 64, L"close %s", alias); send(cmd);
+	}
+	inline void playOnce(const wchar_t* alias, const wchar_t* file) {
+		close(alias);             // make sure old handle is gone
+		ensureOpen(alias, file);  // open fresh
+		wchar_t cmd[64]; swprintf(cmd, 64, L"play %s", alias);
+		send(cmd);
+	}
+	inline void playLoop(const wchar_t* alias, const wchar_t* file) {
+		ensureOpen(alias, file);
+		wchar_t cmd[64]; swprintf(cmd, 64, L"play %s repeat", alias);
+		send(cmd);
+	}
 }
 
 
@@ -213,12 +228,12 @@ GLuint loadTexture(LPCSTR filename) {
 GLuint gSky[6] = { 0,0,0,0,0,0 };  // +X, -X, +Y, -Y, +Z, -Z
 
 static void loadSkyboxTextures() {
-	gSky[0] = loadTexture("side.bmp");   // +X
-	gSky[1] = loadTexture("rSide.bmp");    // -X
-	gSky[2] = loadTexture("floor.bmp");     // +Y
-	gSky[3] = loadTexture("top.bmp");  // -Y
-	gSky[4] = loadTexture("back.bmp");   // +Z
-	gSky[5] = loadTexture("front.bmp");    // -Z
+	gSky[0] = loadTexture("sea.bmp");   // +X
+	gSky[1] = loadTexture("sea.bmp");    // -X
+	gSky[2] = loadTexture("sea.bmp");     // +Y
+	gSky[3] = loadTexture("sea.bmp");  // -Y
+	gSky[4] = loadTexture("sea.bmp");   // +Z
+	gSky[5] = loadTexture("sea.bmp");    // -Z
 
 	for (int i = 0;i < 6;++i) {
 		glBindTexture(GL_TEXTURE_2D, gSky[i]);
@@ -230,92 +245,65 @@ static void loadSkyboxTextures() {
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+static inline void zeroCameraTranslation() {
+	GLfloat mv[16];
+	glGetFloatv(GL_MODELVIEW_MATRIX, mv);
+	mv[12] = mv[13] = mv[14] = 0.0f;
+	glLoadMatrixf(mv);
+}
+
+static inline void emitFace(GLuint tex,
+	float x0, float y0, float z0,
+	float x1, float y1, float z1,
+	float x2, float y2, float z2,
+	float x3, float y3, float z3)
+{
+	glBindTexture(GL_TEXTURE_2D, tex);
+	glBegin(GL_QUADS);
+	glTexCoord2f(0, 0); glVertex3f(x0, y0, z0);
+	glTexCoord2f(1, 0); glVertex3f(x1, y1, z1);
+	glTexCoord2f(1, 1); glVertex3f(x2, y2, z2);
+	glTexCoord2f(0, 1); glVertex3f(x3, y3, z3);
+	glEnd();
+}
+
 
 static void drawSkybox(float halfSize) {
+	const float s = halfSize;
+
 	glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT | GL_DEPTH_BUFFER_BIT | GL_POLYGON_BIT | GL_CURRENT_BIT);
 	glDisable(GL_LIGHTING);
 	glDisable(GL_FOG);
-	glEnable(GL_TEXTURE_2D); 
+	glEnable(GL_TEXTURE_2D);
 	glEnable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
-	glEnable(GL_CULL_FACE); glCullFace(GL_FRONT);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE); // or keep MODULATE and set white
-	glColor3f(1, 1, 1); // ensure no tint
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_FRONT);               // draw cube inside
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+	glColor3f(1, 1, 1);
 
-	glMatrixMode(GL_MODELVIEW);
 	glPushMatrix();
-	GLfloat mv[16]; glGetFloatv(GL_MODELVIEW_MATRIX, mv);
-	mv[12] = mv[13] = mv[14] = 0.0f; glLoadMatrixf(mv);
-	const float s = halfSize;
-	{
-		GLfloat mv[16];
-		glGetFloatv(GL_MODELVIEW_MATRIX, mv);
-		mv[12] = mv[13] = mv[14] = 0.0f;  // remove translation
-		glLoadMatrixf(mv);
+	zeroCameraTranslation();
 
-		const float s = halfSize;
+	// +X
+	emitFace(gSky[0], +s, -s, -s, +s, -s, +s, +s, +s, +s, +s, +s, -s);
+	// -X
+	emitFace(gSky[1], -s, -s, +s, -s, -s, -s, -s, +s, -s, -s, +s, +s);
+	// +Y (top)
+	emitFace(gSky[2], -s, +s, -s, +s, +s, -s, +s, +s, +s, -s, +s, +s);
+	// -Y (bottom)
+	emitFace(gSky[3], -s, -s, +s, +s, -s, +s, +s, -s, -s, -s, -s, -s);
+	// +Z (front)
+	emitFace(gSky[4], +s, -s, +s, -s, -s, +s, -s, +s, +s, +s, +s, +s);
+	// -Z (back)
+	emitFace(gSky[5], -s, -s, -s, +s, -s, -s, +s, +s, -s, -s, +s, -s);
 
-		// +X (right)
-		glBindTexture(GL_TEXTURE_2D, gSky[0]);
-		glBegin(GL_QUADS);
-		glTexCoord2f(0, 0); glVertex3f(+s, -s, -s);
-		glTexCoord2f(1, 0); glVertex3f(+s, -s, +s);
-		glTexCoord2f(1, 1); glVertex3f(+s, +s, +s);
-		glTexCoord2f(0, 1); glVertex3f(+s, +s, -s);
-		glEnd();
-
-		// -X (left)
-		glBindTexture(GL_TEXTURE_2D, gSky[1]);
-		glBegin(GL_QUADS);
-		glTexCoord2f(0, 0); glVertex3f(-s, -s, +s);
-		glTexCoord2f(1, 0); glVertex3f(-s, -s, -s);
-		glTexCoord2f(1, 1); glVertex3f(-s, +s, -s);
-		glTexCoord2f(0, 1); glVertex3f(-s, +s, +s);
-		glEnd();
-
-		// +Y (top)
-		glBindTexture(GL_TEXTURE_2D, gSky[2]);
-		glBegin(GL_QUADS);
-		glTexCoord2f(0, 0); glVertex3f(-s, +s, -s);
-		glTexCoord2f(1, 0); glVertex3f(+s, +s, -s);
-		glTexCoord2f(1, 1); glVertex3f(+s, +s, +s);
-		glTexCoord2f(0, 1); glVertex3f(-s, +s, +s);
-		glEnd();
-
-		// -Y (bottom)
-		glBindTexture(GL_TEXTURE_2D, gSky[3]);
-		glBegin(GL_QUADS);
-		glTexCoord2f(0, 0); glVertex3f(-s, -s, +s);
-		glTexCoord2f(1, 0); glVertex3f(+s, -s, +s);
-		glTexCoord2f(1, 1); glVertex3f(+s, -s, -s);
-		glTexCoord2f(0, 1); glVertex3f(-s, -s, -s);
-		glEnd();
-
-		// +Z (front)
-		glBindTexture(GL_TEXTURE_2D, gSky[4]);
-		glBegin(GL_QUADS);
-		glTexCoord2f(0, 0); glVertex3f(+s, -s, +s);
-		glTexCoord2f(1, 0); glVertex3f(-s, -s, +s);
-		glTexCoord2f(1, 1); glVertex3f(-s, +s, +s);
-		glTexCoord2f(0, 1); glVertex3f(+s, +s, +s);
-		glEnd();
-
-		// -Z (back)
-		glBindTexture(GL_TEXTURE_2D, gSky[5]);
-		glBegin(GL_QUADS);
-		glTexCoord2f(0, 0); glVertex3f(-s, -s, -s);
-		glTexCoord2f(1, 0); glVertex3f(+s, -s, -s);
-		glTexCoord2f(1, 1); glVertex3f(+s, +s, -s);
-		glTexCoord2f(0, 1); glVertex3f(-s, +s, -s);
-		glEnd();
-	}
 	glPopMatrix();
 
 	glBindTexture(GL_TEXTURE_2D, 0);
-	glCullFace(GL_BACK); glDepthMask(GL_TRUE);
+	glCullFace(GL_BACK);
+	glDepthMask(GL_TRUE);
 	glPopAttrib();
-
-
 }
 
 
@@ -418,19 +406,19 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		if (wParam == 'W') 
 		{
 			gKeyW = false;
-			stopAndClose(L"walk");
+			Audio::close(L"walk");
 		}
 		else if (wParam == 'A') {
 			gKeyA = false;
-			stopAndClose(L"walk");
+			Audio::close(L"walk");
 		}
 		else if (wParam == 'S') {
 			gKeyS = false;
-			stopAndClose(L"walk");
+			Audio::close(L"walk");
 		}
 		else if (wParam == 'D') {
 			gKeyD = false;
-			stopAndClose(L"walk");
+			Audio::close(L"walk");
 		}
 		else if (wParam == 'X') { if (gWpnKeyXDown && gWpnState == WPN_X_CHARGING) { gWpnState = WPN_X_SWEEP; gWpnTimer = 0; } gWpnKeyXDown = false; }
 
@@ -550,15 +538,15 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 				zJumpStartY = yPosition;   // <-- record current Y for the jump arc
 				zImpactSpawned = false;    // <-- we haven’t hit the ground yet
 				gImpactTimer = 0.0f;       // <-- reset shock ring FX
-				playFxOnce(L"fxZ", MP3_ACTION_Z);
+				Audio::playOnce(L"fxZ", MP3_ACTION_Z);
 			}
 		}
 
-		else if (wParam == 'X') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_X_CHARGING; gWpnTimer = 0; gWpnCharge = 0; gWpnKeyXDown = true;  playFxOnce(L"fxX", MP3_ACTION_X);
+		else if (wParam == 'X') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_X_CHARGING; gWpnTimer = 0; gWpnCharge = 0; gWpnKeyXDown = true;  Audio::playOnce(L"fxX", MP3_ACTION_X);
  } }
 
 
-		else if (wParam == 'C') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_C_WATERSKIM; gWpnTimer = 0; gWaterTrail.clear();     playFxOnce(L"fxC", MP3_ACTION_C);
+		else if (wParam == 'C') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_C_WATERSKIM; gWpnTimer = 0; gWaterTrail.clear();     Audio::playOnce(L"fxC", MP3_ACTION_C);
 } }
 
 		
@@ -575,7 +563,6 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 void projection() {
 	glMatrixMode(GL_PROJECTION);			 //refer to the projection matrix
 	glLoadIdentity();						 //reset the projection matrix
-	glTranslatef(ptx, pty, 0);				 //translate x and y for projection			
 	glRotatef(prx, 1, 0, 0);
 	glRotatef(pry, 0, 1, 0);	             //rotate y for projection	
 
@@ -639,7 +626,7 @@ void drawSphere(float r, int slices, int stacks) {
 	std::vector<float> cosPhi(slices + 1), sinPhi(slices + 1);
 	for (int i = 0; i <= slices; ++i) {
 		// phi in [0, 2π]; duplicate i == slices to stitch the seam cleanly
-		float phi = (float)(2.0 * M_PI * i / slices);
+		float phi = (float)(2.0 * Gfx::PI * i / slices);
 		cosPhi[i] = cosf(phi);
 		sinPhi[i] = sinf(phi);
 	}
@@ -650,8 +637,8 @@ void drawSphere(float r, int slices, int stacks) {
 		float v1 = (float)(j + 1) / stacks;   // [0..1]
 
 		// theta0/theta1: angles from +π/2 down to -π/2
-		float theta0 = (float)(M_PI * (0.5 - v0));   // +π/2 -> -π/2
-		float theta1 = (float)(M_PI * (0.5 - v1));
+		float theta0 = (float)(Gfx::PI * (0.5 - v0));   // +π/2 -> -π/2
+		float theta1 = (float)(Gfx::PI * (0.5 - v1));
 
 		float c0 = cosf(theta0), s0 = sinf(theta0);  // ring 0 (upper)
 		float c1 = cosf(theta1), s1 = sinf(theta1);  // ring 1 (lower)
@@ -702,7 +689,7 @@ static void drawCylinder(float r0, float r1, float h,
 	// Precompute phi ring
 	std::vector<float> c(slices + 1), s(slices + 1);
 	for (int i = 0; i <= slices; ++i) {
-		float phi = float(2.0 * M_PI * i / slices);
+		float phi = float(2.0 * Gfx::PI * i / slices);
 		c[i] = cosf(phi); s[i] = sinf(phi);
 	}
 
@@ -943,7 +930,7 @@ static float gBulletCooldown = 0.0f;    // time left until next shot
 // Where bullets spawn (computed each frame inside drawTridentHeldPose)
 static float gMuzzleW[3] = { 0,0,0 };  // world-space spawn point
 static float gMuzzleDirW[3] = { 0,0,1 };  // world-space forward
-static inline void norm3f(float& x, float& y, float& z) { float m = sqrtf(x * x + y * y + z * z); if (m < 1e-6f)m = 1; x /= m; y /= m; z /= m; }
+
 
 
 
@@ -1267,15 +1254,21 @@ static void drawGroundImpactRing() {
 }
 
 //--------------------------------------------------------------------
-// put this near your globals (or at top of file)
-inline float clampf(float v, float lo, float hi) { return (v < lo) ? lo : (v > hi) ? hi : v; }
+
+// Frame delta (seconds), stable on first call
+static float frameDeltaSeconds() {
+	static DWORD last = 0;
+	DWORD now = GetTickCount();
+	if (last == 0) { last = now; return 0.0f; }
+	float dt = (now - last) * (1.0f / 1000.0f);
+	last = now;
+	// Clamp a bit to avoid huge stalls from minimizing window, etc.
+	return Gfx::clamp(dt, 0.0f, 0.1f);
+}
 
 void action() {
 	// --- dt in seconds ---
-	DWORD now = GetTickCount();
-	if (gLastTick == 0) gLastTick = now;
-	float dt = (now - gLastTick) * (1.0f / 1000.0f);
-	gLastTick = now;
+	const float dt = frameDeltaSeconds();
 
 	// --- advance gait & translate root when walking ---
 	if (gWalking) {
@@ -1289,9 +1282,9 @@ void action() {
 			zPosition += vz * gWalkSpeed * dt;
 
 			const float charRadius = 3.0f;        // tweak to your model half-width
-			xPosition = clampf(xPosition, OLeft + charRadius, ORight - charRadius);
-			zPosition = clampf(zPosition, ONear + charRadius, OFar - charRadius);
-			startLoop(L"walk", MP3_WALK);
+			xPosition = Gfx::clamp(xPosition, OLeft + charRadius, ORight - charRadius);
+			zPosition = Gfx::clamp(zPosition, ONear + charRadius, OFar - charRadius);
+			Audio::playLoop(L"walk", MP3_WALK);
 	}
 	// === BREATHING FREQUENCY CONTROL ===
 	float speed = gWalking ? gWalkSpeed : 0.0f;
@@ -1770,8 +1763,8 @@ void body() {
 
 				// outer vertical wall
 				for (int i = 0;i < N;i++) {
-					float a0 = (2.f * (float)M_PI / N) * i;
-					float a1 = (2.f * (float)M_PI / N) * (i + 1);
+					float a0 = (2.f * (float)Gfx::PI / N) * i;
+					float a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
 					float x0 = rx_outer * cosf(a0), z0 = rz_outer * sinf(a0);
 					float x1 = rx_outer * cosf(a1), z1 = rz_outer * sinf(a1);
 					glBegin(GL_QUADS);
@@ -1780,8 +1773,8 @@ void body() {
 				}
 				// inner vertical wall
 				for (int i = 0;i < N;i++) {
-					float a0 = (2.f * (float)M_PI / N) * i;
-					float a1 = (2.f * (float)M_PI / N) * (i + 1);
+					float a0 = (2.f * (float)Gfx::PI / N) * i;
+					float a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
 					float x0 = rx_in * cosf(a0), z0 = rz_in * sinf(a0);
 					float x1 = rx_in * cosf(a1), z1 = rz_in * sinf(a1);
 					glBegin(GL_QUADS);
@@ -1791,7 +1784,7 @@ void body() {
 				// bottom cap (triangles)
 				glColor3fv(GOLD_D);
 				for (int i = 0;i < N;i++) {
-					float a0 = (2.f * (float)M_PI / N) * i, a1 = (2.f * (float)M_PI / N) * (i + 1);
+					float a0 = (2.f * (float)Gfx::PI / N) * i, a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
 					float xo0 = rx_outer * cosf(a0), zo0 = rz_outer * sinf(a0);
 					float xo1 = rx_outer * cosf(a1), zo1 = rz_outer * sinf(a1);
 					float xi0 = rx_in * cosf(a0), zi0 = rz_in * sinf(a0);
@@ -1805,7 +1798,7 @@ void body() {
 				glColor3fv(GOLD);
 				const float yc = y1 + dome_h;
 				for (int i = 0;i < N;i++) {
-					float a0 = (2.f * (float)M_PI / N) * i, a1 = (2.f * (float)M_PI / N) * (i + 1);
+					float a0 = (2.f * (float)Gfx::PI / N) * i, a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
 					float xi0 = rx_in * cosf(a0), zi0 = rz_in * sinf(a0);
 					float xi1 = rx_in * cosf(a1), zi1 = rz_in * sinf(a1);
 					glBegin(GL_TRIANGLES);
@@ -1823,7 +1816,7 @@ void body() {
 				const float rzo = rz_outer + rim_thick;
 				const float yb0 = board_t * 0.50f, yb1 = yb0 + rim_thick * 0.90f;
 				for (int i = 0;i < N;i++) {
-					float a0 = (2.f * (float)M_PI / N) * i, a1 = (2.f * (float)M_PI / N) * (i + 1);
+					float a0 = (2.f * (float)Gfx::PI / N) * i, a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
 					float x0i = rx_outer * cosf(a0), z0i = rz_outer * sinf(a0);
 					float x1i = rx_outer * cosf(a1), z1i = rz_outer * sinf(a1);
 					float x0o = rxo * cosf(a0), z0o = rzo * sinf(a0);
@@ -1846,7 +1839,7 @@ void body() {
 			const float tass_t = 0.03f;
 			const float tass_h = 0.72f;
 			for (int i = 2;i <= N - 4;i++) {                 // skip back side so it doesn’t intersect collar
-				float a = (2.f * (float)M_PI / N) * i;
+				float a = (2.f * (float)Gfx::PI / N) * i;
 				// only front/outer quadrant
 				// (angles around ellipse: i from ~2..N-4 covers front/outer)
 				float xo = (rx_outer + rim_thick) * cosf(a);
@@ -2105,16 +2098,7 @@ static void drawCapsuleDownY(float rTop, float rBot, float length) {
 	drawCapsuleAlongZ(rTop, rBot, length); // inherits overlay when enabled
 	glPopMatrix();
 }
-// --- Slight darken for creases ---
-static void pushDarken(float k = 0.96f) {
-	GLfloat amb[4], dif[4], spec[4];
-	glGetMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, amb);
-	glGetMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, dif);
-	glGetMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, spec);
-	for (int i = 0;i < 3;i++) { amb[i] *= k; dif[i] *= k; }
-	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, amb);
-	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, dif);
-}
+
 
 // --- Helper: know if lighting is on (to choose glColor vs material) ---
 // ===== Helpers (only GL_QUADS / GL_TRIANGLES) =====
@@ -2342,7 +2326,7 @@ static void drawTridentHeldPose() {
 	gMuzzleDirW[0] = tipW[0] - gMuzzleW[0];
 	gMuzzleDirW[1] = tipW[1] - gMuzzleW[1];
 	gMuzzleDirW[2] = tipW[2] - gMuzzleW[2];
-	norm3f(gMuzzleDirW[0], gMuzzleDirW[1], gMuzzleDirW[2]);
+	Gfx::norm3(gMuzzleDirW[0], gMuzzleDirW[1], gMuzzleDirW[2]);
 
 
 	float leftGripLocal[3] = { 0.0f, 0.0f, 1.15f };  // along local +Z from the right-hand grip
@@ -2603,11 +2587,6 @@ static void drawFingerNatural(float splayDeg, float yawDeg,
 
 // ======== QUADS/TRIS ONLY PRIMITIVES ========
 
-static inline void vnorm3f(float x, float y, float z) {
-    // unit-length normal (cheap normalize)
-    float m = sqrtf(x*x + y*y + z*z); if (m < 1e-6f) m = 1.0f;
-    glNormal3f(x/m, y/m, z/m);
-}
 
 // Connect two elliptical rings with QUADS, along -Y.
 // slices = 16..32 looks nice (keep even for clean loops).
@@ -2641,12 +2620,12 @@ static void connectRingsQuads(int slices,
         float C1 = cosf(a1 + t1), S1 = sinf(a1 + t1);
         float X1 = rx1 * C1, Z1 = rz1 * S1;
         float NX1 = C1, NZ1 = S1;
-
+		float ny = 0;
         // QUAD (v0->v1->V1->V0)
-        vnorm3f(nx0, 0, nz0); glVertex3f(x0, y0, z0);
-        vnorm3f(nx1, 0, nz1); glVertex3f(x1, y0, z1);
-        vnorm3f(NX1, 0, NZ1); glVertex3f(X1, y1, Z1);
-        vnorm3f(NX0, 0, NZ0); glVertex3f(X0, y1, Z0);
+       Gfx::norm3(nx0, ny, nz0); glVertex3f(x0, y0, z0);
+       Gfx::norm3(nx1, ny, nz1); glVertex3f(x1, y0, z1);
+       Gfx::norm3(NX1,ny, NZ1); glVertex3f(X1, y1, Z1);
+       Gfx::norm3(NX0,ny, NZ0); glVertex3f(X0, y1, Z0);
     }
     glEnd();
 }
@@ -2671,10 +2650,10 @@ static void ellipseCapTri(int slices, float y, float rx, float rz, int dir)
         int j = (i + 1) % slices;
         float a0 = (2.0f * 3.1415926f * i) / slices;
         float a1 = (2.0f * 3.1415926f * j) / slices;
-
-        vnorm3f(0, ny, 0); glVertex3f(0, y, 0);
-        vnorm3f(0, ny, 0); glVertex3f(rx * cosf(a1), y, rz * sinf(a1));
-        vnorm3f(0, ny, 0); glVertex3f(rx * cosf(a0), y, rz * sinf(a0));
+		float zero = 0;
+       Gfx::norm3(zero, ny, zero); glVertex3f(0, y, 0);
+       Gfx::norm3(zero, ny, zero); glVertex3f(rx * cosf(a1), y, rz * sinf(a1));
+       Gfx::norm3(zero, ny, zero); glVertex3f(rx * cosf(a0), y, rz * sinf(a0));
     }
     glEnd();
 }
@@ -3070,8 +3049,8 @@ static void drawFoot(int side /*-1 left, +1 right*/) {
 				const float zTop = zBase + THICK * 0.10f;
 
 				for (int i = 0;i < N;i++) {
-					float a0 = (float)i * (2.0f * (float)M_PI / N);
-					float a1 = (float)(i + 1) * (2.0f * (float)M_PI / N);
+					float a0 = (float)i * (2.0f * (float)Gfx::PI / N);
+					float a1 = (float)(i + 1) * (2.0f * (float)Gfx::PI / N);
 
 					float x0i = rIn * cosf(a0), x1i = rIn * cosf(a1);
 					float y0i = rIn * sinf(a0), y1i = rIn * sinf(a1);
@@ -3246,7 +3225,6 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	// -----------------------------------------
 
 	// THIGH (slight inward taper)
-	pushDarken(0.985f);
 	drawCapsuleDownY(THIGH_R0, THIGH_R1, THIGH_LEN);
 
 	// KNEE joint sphere + patella hint
@@ -3506,7 +3484,7 @@ static void drawCrownGLT(float r, float t, float bh, float sh,
 	const float rOut = r + t;
 	const float y0 = 0.0f;     // band bottom
 	const float y1 = bh;       // band top
-	const float dA = 2.0f * M_PI / (float)slices;
+	const float dA = 2.0f * Gfx::PI / (float)slices;
 
 	glBegin(GL_TRIANGLES);
 
@@ -4340,7 +4318,7 @@ void head(){
 
 
 void poseidon() {
-	glClearColor(0.2,0.2,0.2 ,0.0);
+	glClearColor(0,0.1372,0.2235,0);
 	glEnable(GL_DEPTH_TEST);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -4357,22 +4335,22 @@ void poseidon() {
 
 	glMatrixMode(GL_MODELVIEW);
 
-	//float skyHalf = 0.0f;
-	//if (isOrtho) {
-	//	// stay just inside the ortho box
-	//	skyHalf =  min(min(ORight, -OLeft),
-	//		min(min(OUp, -ODown),
-	//			min(OFar, -ONear)));
-	//	// e.g. with ±10 on all axes → use ~9.5
-	//}
-	//else {
-	//	// inside the perspective frustum: far / √3 is a safe bound
-	//	float nearZ = 1.0f, farZ = 200.0f;   // your gluPerspective values
-	//	skyHalf = min(farZ / 1.732f * 0.95f,  // keep corners inside far
-	//		max(nearZ + 0.5f, 50.0f)); // also keep it beyond the near plane
-	//	// e.g. ~110 is fine; 50 also works great.
-	//}
-	//	drawSkybox(skyHalf);
+	float skyHalf = 0.0f;
+	if (isOrtho) {
+		// stay just inside the ortho box
+		skyHalf =  min(min(ORight, -OLeft),
+			min(min(OUp, -ODown),
+				min(OFar, -ONear)));
+		// e.g. with ±10 on all axes → use ~9.5
+	}
+	else {
+		// inside the perspective frustum: far / √3 is a safe bound
+		float nearZ = 1.0f, farZ = 200.0f;   // your gluPerspective values
+		skyHalf = min(farZ / 1.732f * 0.95f,  // keep corners inside far
+			max(nearZ + 0.5f, 50.0f)); // also keep it beyond the near plane
+		// e.g. ~110 is fine; 50 also works great.
+	}
+		drawSkybox(skyHalf);
 
 	
 	glPushMatrix();
@@ -4413,6 +4391,9 @@ void poseidon() {
 	glRotatef(actTorsoPitch, 1, 0, 0);
 	glRotatef(actTorsoRoll, 0, 0, 1);
 
+	// Weapon on back when not equipped
+	if (gWpnState == WPN_ON_BACK || gWpnState == WPN_EQUIP_ANIM)
+		drawTridentOnBack();
 	drawSarongHuggingTorso(gPelvisY);
 
 	glPushMatrix();
@@ -4421,9 +4402,6 @@ void poseidon() {
 	rightleg();
 	glPopMatrix();
 
-	// Weapon on back when not equipped
-	if (gWpnState == WPN_ON_BACK || gWpnState == WPN_EQUIP_ANIM)
-		drawTridentOnBack();
 	
 	
 
