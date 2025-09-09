@@ -3513,61 +3513,85 @@ static inline void nrm(V3 a, V3 b, V3 c) {
 	float L = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z) + 1e-8f;
 	glNormal3f(n.x / L, n.y / L, n.z / L);
 }
-
 static void drawCrownGLT(float r, float t, float bh, float sh,
 	int slices = 60, int step = 6)
 {
 	const float rIn = r;
 	const float rOut = r + t;
-	const float y0 = 0.0f;     // band bottom
-	const float y1 = bh;       // band top
+	const float y0 = 0.0f;   // band bottom
+	const float y1 = bh;     // band top
 	const float dA = 2.0f * Gfx::PI / (float)slices;
 
-	glBegin(GL_TRIANGLES);
+	auto emitTri = [](const V3& a, const V3& b, const V3& c, const V3& wantDir) {
+		// n = (b-a) x (c-a)
+		V3 u{ b.x - a.x, b.y - a.y, b.z - a.z };
+		V3 v{ c.x - a.x, c.y - a.y, c.z - a.z };
+		V3 n{ u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x };
 
-	for (int i = 0;i < slices;i++) {
+		// Flip if normal doesn't face the desired direction
+		float dot = n.x * wantDir.x + n.y * wantDir.y + n.z * wantDir.z;
+		if (dot < 0.0f) { n.x = -n.x; n.y = -n.y; n.z = -n.z; }
+
+		float L = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
+		if (L > 1e-20f) { n.x /= L; n.y /= L; n.z /= L; }
+
+		glNormal3f(n.x, n.y, n.z);
+		glVertex3f(a.x, a.y, a.z);
+		glVertex3f(b.x, b.y, b.z);
+		glVertex3f(c.x, c.y, c.z);
+		};
+
+	glBegin(GL_TRIANGLES);
+	for (int i = 0; i < slices; ++i) {
 		int j = (i + 1) % slices;
 		float a0 = i * dA, a1 = j * dA;
 
 		// ring points
-		V3 o00 = { rOut * cosf(a0), y0, rOut * sinf(a0) };
-		V3 o01 = { rOut * cosf(a1), y0, rOut * sinf(a1) };
-		V3 o10 = { rOut * cosf(a0), y1, rOut * sinf(a0) };
-		V3 o11 = { rOut * cosf(a1), y1, rOut * sinf(a1) };
+		V3 o00{ rOut * cosf(a0), y0, rOut * sinf(a0) };
+		V3 o01{ rOut * cosf(a1), y0, rOut * sinf(a1) };
+		V3 o10{ rOut * cosf(a0), y1, rOut * sinf(a0) };
+		V3 o11{ rOut * cosf(a1), y1, rOut * sinf(a1) };
 
-		V3 i00 = { rIn * cosf(a0), y0, rIn * sinf(a0) };
-		V3 i01 = { rIn * cosf(a1), y0, rIn * sinf(a1) };
-		V3 i10 = { rIn * cosf(a0), y1, rIn * sinf(a0) };
-		V3 i11 = { rIn * cosf(a1), y1, rIn * sinf(a1) };
+		V3 i00{ rIn * cosf(a0), y0, rIn * sinf(a0) };
+		V3 i01{ rIn * cosf(a1), y0, rIn * sinf(a1) };
+		V3 i10{ rIn * cosf(a0), y1, rIn * sinf(a0) };
+		V3 i11{ rIn * cosf(a1), y1, rIn * sinf(a1) };
 
-		// ----- BAND: outer wall (two triangles) -----
-		nrm(o00, o01, o11); glVertex3f(o00.x, o00.y, o00.z); glVertex3f(o01.x, o01.y, o01.z); glVertex3f(o11.x, o11.y, o11.z);
-		nrm(o00, o11, o10); glVertex3f(o00.x, o00.y, o00.z); glVertex3f(o11.x, o11.y, o11.z); glVertex3f(o10.x, o10.y, o10.z);
+		// Desired directions (unit-ish) for normal orientation
+		V3 dirOut{ cosf((a0 + a1) * 0.5f), 0.0f, sinf((a0 + a1) * 0.5f) }; // radial outward
+		V3 dirIn{ -dirOut.x, 0.0f, -dirOut.z };                   // radial inward
 
-		// ----- BAND: inner wall (flip winding) -----
-		nrm(i01, i00, i10); glVertex3f(i01.x, i01.y, i01.z); glVertex3f(i00.x, i00.y, i00.z); glVertex3f(i10.x, i10.y, i10.z);
-		nrm(i01, i10, i11); glVertex3f(i01.x, i01.y, i01.z); glVertex3f(i10.x, i10.y, i10.z); glVertex3f(i11.x, i11.y, i11.z);
+		// ----- BAND: outer wall (ensure outward) -----
+		emitTri(o00, o01, o11, dirOut);
+		emitTri(o00, o11, o10, dirOut);
 
-		// ----- BAND: top cap (between inner & outer rims) -----
-		nrm(o10, o11, i11); glVertex3f(o10.x, o10.y, o10.z); glVertex3f(o11.x, o11.y, o11.z); glVertex3f(i11.x, i11.y, i11.z);
-		nrm(o10, i11, i10); glVertex3f(o10.x, o10.y, o10.z); glVertex3f(i11.x, i11.y, i11.z); glVertex3f(i10.x, i10.y, i10.z);
+		// ----- BAND: inner wall (ensure inward) -----
+		emitTri(i01, i00, i10, dirIn);
+		emitTri(i01, i10, i11, dirIn);
 
-		// ----- BAND: bottom cap (optional; keeps it solid) -----
-		nrm(o01, o00, i00); glVertex3f(o01.x, o01.y, o01.z); glVertex3f(o00.x, o00.y, o00.z); glVertex3f(i00.x, i00.y, i00.z);
-		nrm(o01, i00, i01); glVertex3f(o01.x, o01.y, o01.z); glVertex3f(i00.x, i00.y, i00.z); glVertex3f(i01.x, i01.y, i01.z);
+		// ----- BAND: top cap (planar +Y) -----
+		V3 up{ 0,1,0 };
+		emitTri(o10, o11, i11, up);
+		emitTri(o10, i11, i10, up);
 
-		// ----- SPIKES every 'step' segments -----
+		// ----- BAND: bottom cap (planar -Y) -----
+		V3 dn{ 0,-1,0 };
+		emitTri(o01, o00, i00, dn);
+		emitTri(o01, i00, i01, dn);
+
+		// ----- SPIKES every 'step' segments (ensure outward) -----
 		if (i % step == 0) {
 			float am = 0.5f * (a0 + a1);
-			V3 tip = { (rOut - 0.25f * t) * cosf(am), y1 + sh, (rOut - 0.25f * t) * sinf(am) };
+			V3 tip{ (rOut - 0.25f * t) * cosf(am), y1 + sh, (rOut - 0.25f * t) * sinf(am) };
+			V3 dirSpike{ cosf(am), 0.0f, sinf(am) }; // outward along spike
 
-			// front wedge (outer edge)
-			nrm(o10, o11, tip); glVertex3f(o10.x, o10.y, o10.z); glVertex3f(o11.x, o11.y, o11.z); glVertex3f(tip.x, tip.y, tip.z);
-			// back wedge (inner edge) for thickness
-			nrm(i11, i10, tip); glVertex3f(i11.x, i11.y, i11.z); glVertex3f(i10.x, i10.y, i10.z); glVertex3f(tip.x, tip.y, tip.z);
-			// close left and right sides so it’s watertight
-			nrm(o10, i10, tip); glVertex3f(o10.x, o10.y, o10.z); glVertex3f(i10.x, i10.y, i10.z); glVertex3f(tip.x, tip.y, tip.z);
-			nrm(i11, o11, tip); glVertex3f(i11.x, i11.y, i11.z); glVertex3f(o11.x, o11.y, o11.z); glVertex3f(tip.x, tip.y, tip.z);
+			// front wedge (outer)
+			emitTri(o10, o11, tip, dirSpike);
+			// back wedge (inner thickness face) — still oriented outward relative to outside view
+			emitTri(i10, i11, tip, dirSpike);
+			// close left and right sides
+			emitTri(i10, o10, tip, dirSpike);
+			emitTri(o11, i11, tip, dirSpike);
 		}
 	}
 	glEnd();
