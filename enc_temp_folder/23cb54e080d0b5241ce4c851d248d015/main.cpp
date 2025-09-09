@@ -2761,7 +2761,7 @@ static void drawArmDown(int side)
 
 	// ---------- UPPER ARM (two longer sections for deltoid→triceps taper) ----------
 
-	// Upper arm A: gentle taper (deltoid bulk → mid humerus)
+// Upper arm A: gentle taper (deltoid bulk → mid humerus)
 	tubeSectionQuads(SLICES, UPPER_LEN * 0.55f,
 		HUM_RX0, HUM_RZ0,
 		HUM_RX1, HUM_RZ1, 0, 0);
@@ -2779,23 +2779,15 @@ static void drawArmDown(int side)
 		HUM_RX2, HUM_RZ2,
 		ELB_RX, ELB_RZ, 0, 0);
 	glTranslatef(0, -(ELB_SEG * 0.5f), 0);
+
 	// Elbow B: contract again (gives the olecranon bump)
 	tubeSectionQuads(SLICES, ELB_SEG * 0.5f,
 		ELB_RX, ELB_RZ,
 		PRO_RX0, PRO_RZ0, 0, 0);
 	glTranslatef(0, -(ELB_SEG * 0.5f), 0);
-	// --- ELBOW (after you place the elbow sphere) ---
-	if (side > 0) {
-		glRotatef(actRElbowFlex, 1, 0, 0);
-	}
-	else {
-		float pL[3] = { 0,0,0 };   // local grip target for left arm
-		bool havePL = false;
-	}
 
-	// Add elbow flex from action pose
-	if (side > 0) glRotatef(actRElbowFlex, 1, 0, 0);
-	else          glRotatef(actLElbowFlex, 1, 0, 0);
+	// --- ELBOW FLEX (apply ONCE) ---
+	glRotatef((side > 0) ? actRElbowFlex : actLElbowFlex, 1, 0, 0);
 
 	// ---------- FOREARM (subtle pronation twist) ----------
 	// Proximal forearm bulk → mid
@@ -2811,6 +2803,14 @@ static void drawArmDown(int side)
 		DST_RX, DST_RZ,
 		TWIST_FORE * 0.5f, TWIST_FORE);
 	glTranslatef(0, -(FORE_LEN * 0.42f), 0);
+
+	// ---------- WRIST COLLAR (short tightening to match hand root) ----------
+	tubeSectionQuads(SLICES, WRIST_SEG,
+		DST_RX, DST_RZ,
+		DST_RX * 0.94f, DST_RZ * 0.94f,
+		TWIST_FORE, TWIST_FORE);
+	glTranslatef(0, -WRIST_SEG, 0);
+
 
 	// ---------- WRIST COLLAR (short tightening to match hand root) ----------
 	tubeSectionQuads(SLICES, WRIST_SEG,
