@@ -513,21 +513,33 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			isLightOn = !isLightOn;
 		}
 		else if (wParam == 'U') {
+			if(isLightOn && lightPos1[1] < OUp - light1MoveSpeed)
 			lightPos1[1] += light1MoveSpeed;
 		}
 		else if (wParam == 'J') {
+			if (isLightOn && lightPos1[1] > ODown + light1MoveSpeed)
+
 			lightPos1[1] -= light1MoveSpeed;
 		}
 		else if (wParam == 'H') {
+			if (isLightOn && lightPos1[0] > OLeft+ light1MoveSpeed)
+
+
 			lightPos1[0] -= light1MoveSpeed;
 		}
 		else if (wParam == 'K') {
+			if (isLightOn && lightPos1[0] < ORight - light1MoveSpeed)
+
 			lightPos1[0] += light1MoveSpeed;
 		}
 		else if (wParam == 'Y') {
+			if (isLightOn && lightPos1[2] > ONear + light1MoveSpeed)
+
 			lightPos1[2] -= light1MoveSpeed;
 		}
 		else if (wParam == 'I') {
+			if (isLightOn && lightPos1[2]<OFar - light1MoveSpeed)
+
 			lightPos1[2] += light1MoveSpeed;
 		}
 	
@@ -581,6 +593,7 @@ void projection() {
 }
 
 
+
 void lighting() {
 	if (isLightOn) {
 		   glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
@@ -599,10 +612,26 @@ void lighting() {
 		glPushMatrix();
 		glDisable(GL_LIGHTING);  // Disable lighting for light source visualization
 		glTranslatef(lightPos1[0], lightPos1[1], lightPos1[2]);
-		glColor3f(1, 0, 0);  // white color for light source
+		// --- Blue glowing orb for light source ---
 		GLUquadric* lightSphere = gluNewQuadric();
-		gluSphere(lightSphere, 0.05, 50, 50);
+
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE);   // additive glow
+		glDisable(GL_LIGHTING);              // orb should glow by itself
+
+		// Core orb
+		glColor4f(0.2f, 0.6f, 1.0f, 0.8f);   // bright blue
+		gluSphere(lightSphere, 0.10, 32, 32);
+
+		// Halo
+		glColor4f(0.2f, 0.6f, 1.0f, 0.25f);  // faint outer glow
+		gluSphere(lightSphere, 0.25, 32, 32);
+
+		glEnable(GL_LIGHTING);
+		glDisable(GL_BLEND);
+
 		gluDeleteQuadric(lightSphere);
+
 		glEnable(GL_LIGHTING);
 		glPopMatrix();
 
