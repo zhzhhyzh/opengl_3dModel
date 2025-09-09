@@ -16,41 +16,41 @@ C:\Users\henry\source\repos\asg\asg\main.cpp(2512,17): warning C4244: 'argument'
 C:\Users\henry\source\repos\asg\asg\main.cpp(2523,9): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
 C:\Users\henry\source\repos\asg\asg\main.cpp(2522,9): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
 C:\Users\henry\source\repos\asg\asg\main.cpp(2521,9): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-C:\Users\henry\source\repos\asg\asg\main.cpp(2953,19): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(2953,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(2954,24): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(2956,24): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(2956,19): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3005,22): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3258,18): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3597,33): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3597,24): warning C4244: 'argument': conversion from 'double' to 'GLfloat', possible loss of data
-C:\Users\henry\source\repos\asg\asg\main.cpp(3598,22): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3598,17): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3598,12): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3663,18): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3709,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3719,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3729,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3732,27): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3732,20): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3732,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3742,20): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3742,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3759,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(3777,23): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-C:\Users\henry\source\repos\asg\asg\main.cpp(3777,15): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-C:\Users\henry\source\repos\asg\asg\main.cpp(3777,7): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-C:\Users\henry\source\repos\asg\asg\main.cpp(3774,28): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-C:\Users\henry\source\repos\asg\asg\main.cpp(3774,21): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-C:\Users\henry\source\repos\asg\asg\main.cpp(3783,23): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-C:\Users\henry\source\repos\asg\asg\main.cpp(3783,15): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-C:\Users\henry\source\repos\asg\asg\main.cpp(3783,7): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-C:\Users\henry\source\repos\asg\asg\main.cpp(3780,30): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-C:\Users\henry\source\repos\asg\asg\main.cpp(4041,24): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(4041,18): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(4248,24): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(4248,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
-C:\Users\henry\source\repos\asg\asg\main.cpp(4326,24): warning C4305: 'argument': truncation from 'double' to 'GLclampf'
-C:\Users\henry\source\repos\asg\asg\main.cpp(4326,17): warning C4305: 'argument': truncation from 'double' to 'GLclampf'
+C:\Users\henry\source\repos\asg\asg\main.cpp(2982,19): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(2982,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(2983,24): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(2985,24): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(2985,19): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3034,22): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3287,18): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3626,33): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3626,24): warning C4244: 'argument': conversion from 'double' to 'GLfloat', possible loss of data
+C:\Users\henry\source\repos\asg\asg\main.cpp(3627,22): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3627,17): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3627,12): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3692,18): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3738,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3748,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3758,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3761,27): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3761,20): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3761,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3771,20): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3771,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3788,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(3806,23): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
+C:\Users\henry\source\repos\asg\asg\main.cpp(3806,15): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
+C:\Users\henry\source\repos\asg\asg\main.cpp(3806,7): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
+C:\Users\henry\source\repos\asg\asg\main.cpp(3803,28): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
+C:\Users\henry\source\repos\asg\asg\main.cpp(3803,21): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
+C:\Users\henry\source\repos\asg\asg\main.cpp(3812,23): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
+C:\Users\henry\source\repos\asg\asg\main.cpp(3812,15): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
+C:\Users\henry\source\repos\asg\asg\main.cpp(3812,7): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
+C:\Users\henry\source\repos\asg\asg\main.cpp(3809,30): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
+C:\Users\henry\source\repos\asg\asg\main.cpp(4070,24): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(4070,18): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(4277,24): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(4277,15): warning C4305: 'argument': truncation from 'double' to 'GLfloat'
+C:\Users\henry\source\repos\asg\asg\main.cpp(4355,24): warning C4305: 'argument': truncation from 'double' to 'GLclampf'
+C:\Users\henry\source\repos\asg\asg\main.cpp(4355,17): warning C4305: 'argument': truncation from 'double' to 'GLclampf'
   asg.vcxproj -> C:\Users\henry\source\repos\asg\x64\Debug\asg.exe

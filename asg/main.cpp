@@ -2596,57 +2596,87 @@ static void drawFingerNatural(float splayDeg, float yawDeg,
 // ======== QUADS/TRIS ONLY PRIMITIVES ========
 
 
-// Connect two elliptical rings with QUADS, along -Y.
-// slices = 16..32 looks nice (keep even for clean loops).
 static void connectRingsQuads(int slices,
-                              float y0, float rx0, float rz0, float twist0Deg,
-                              float y1, float rx1, float rz1, float twist1Deg)
+	float y0, float rx0, float rz0, float twist0Deg,
+	float y1, float rx1, float rz1, float twist1Deg)
 {
-    const float t0 = twist0Deg * 3.1415926f / 180.0f;
-    const float t1 = twist1Deg * 3.1415926f / 180.0f;
+	const float t0 = twist0Deg * 3.1415926f / 180.0f;
+	const float t1 = twist1Deg * 3.1415926f / 180.0f;
 
-    glBegin(GL_QUADS);
-    for (int i = 0; i < slices; ++i) {
-        int j = (i + 1) % slices;
-        float a0 = (2.0f * 3.1415926f * i) / slices, a1 = (2.0f * 3.1415926f * j) / slices;
+	// Linear change of ellipse radii along Y (used for correct side normals)
+	const float dy = (y1 - y0);
+	const float drx_dy = (fabsf(dy) > 1e-6f) ? (rx1 - rx0) / dy : 0.0f;
+	const float drz_dy = (fabsf(dy) > 1e-6f) ? (rz1 - rz0) / dy : 0.0f;
 
-        // ring 0
-        float c0 = cosf(a0 + t0), s0 = sinf(a0 + t0);
-        float x0 = rx0 * c0, z0 = rz0 * s0;
-        float nx0 = c0 / (rx0 > 1e-6f ? 1.0f : 1.0f);
-        float nz0 = s0 / (rz0 > 1e-6f ? 1.0f : 1.0f);
+	glBegin(GL_QUADS);
+	for (int i = 0; i < slices; ++i) {
+		int j = (i + 1) % slices;
+		float a0 = (2.0f * 3.1415926f * i) / slices;
+		float a1 = (2.0f * 3.1415926f * j) / slices;
 
-        float c1 = cosf(a1 + t0), s1 = sinf(a1 + t0);
-        float x1 = rx0 * c1, z1 = rz0 * s1;
-        float nx1 = c1, nz1 = s1;
+		// --- ring 0 angles ---
+		float c0 = cosf(a0 + t0), s0 = sinf(a0 + t0);
+		float c1 = cosf(a1 + t0), s1 = sinf(a1 + t0);
 
-        // ring 1
-        float C0 = cosf(a0 + t1), S0 = sinf(a0 + t1);
-        float X0 = rx1 * C0, Z0 = rz1 * S0;
-        float NX0 = C0, NZ0 = S0;
+		// --- ring 1 angles ---
+		float C0 = cosf(a0 + t1), S0 = sinf(a0 + t1);
+		float C1 = cosf(a1 + t1), S1 = sinf(a1 + t1);
 
-        float C1 = cosf(a1 + t1), S1 = sinf(a1 + t1);
-        float X1 = rx1 * C1, Z1 = rz1 * S1;
-        float NX1 = C1, NZ1 = S1;
-		float ny = 0;
-        // QUAD (v0->v1->V1->V0)
-       Gfx::norm3(nx0, ny, nz0); glVertex3f(x0, y0, z0);
-       Gfx::norm3(nx1, ny, nz1); glVertex3f(x1, y0, z1);
-       Gfx::norm3(NX1,ny, NZ1); glVertex3f(X1, y1, Z1);
-       Gfx::norm3(NX0,ny, NZ0); glVertex3f(X0, y1, Z0);
-    }
-    glEnd();
+		// --- positions ---
+		float x0 = rx0 * c0, z0 = rz0 * s0;
+		float x1 = rx0 * c1, z1 = rz0 * s1;
+		float X0 = rx1 * C0, Z0 = rz1 * S0;
+		float X1 = rx1 * C1, Z1 = rz1 * S1;
+
+		// --- normals via tangents (Py × Pθ) -> outward ---
+		// Pθ = (-rX sinθ, 0, rZ cosθ)
+		// Py = (drx_dy cosθ, 1, drz_dy sinθ)
+
+		auto emit = [&](float cx, float sx, float rX, float rZ, float y,
+			bool useRing1)
+			{
+				// choose angle set for the correct ring
+				float cosT = cx, sinT = sx;
+				float rx = rX, rz = rZ;
+
+				// tangents
+				float Pthx = -rx * sinT, Pthy = 0.0f, Pthz = rz * cosT;
+				float Pyx = drx_dy * cosT, Pyy = 1.0f, Pyz = drz_dy * sinT;
+
+				// N = Py × Pθ
+				float nx = Pyy * Pthz - Pyz * Pthy;
+				float ny = Pyz * Pthx - Pyx * Pthz;
+				float nz = Pyx * Pthy - Pyy * Pthx;
+
+				// normalize
+				float invLen = 1.0f / (sqrtf(nx * nx + ny * ny + nz * nz) + 1e-20f);
+				nx *= invLen; ny *= invLen; nz *= invLen;
+
+				glNormal3f(nx, ny, nz);
+				glVertex3f(rx * cosT, y, rz * sinT);
+			};
+
+		// QUAD v0 (ring0,a0) -> v1 (ring0,a1) -> V1 (ring1,a1) -> V0 (ring1,a0)
+		emit(c0, s0, rx0, rz0, y0, false);  // v0
+		emit(c1, s1, rx0, rz0, y0, false);  // v1
+		emit(C1, S1, rx1, rz1, y1, true);  // V1
+		emit(C0, S0, rx1, rz1, y1, true);  // V0
+	}
+	glEnd();
 }
 
 // Make an elliptical “tube section” along -Y with optional twist from start→end.
 static void tubeSectionQuads(int slices, float L,
-                             float rxStart, float rzStart,
-                             float rxEnd,   float rzEnd,
-                             float twistDegStart = 0.0f,
-                             float twistDegEnd   = 0.0f)
+	float rxStart, float rzStart,
+	float rxEnd, float rzEnd,
+	float twistDegStart = 0.0f,
+	float twistDegEnd = 0.0f)
 {
-    connectRingsQuads(slices, 0.0f, -rxStart, -rzStart, twistDegStart,  // flip signs to keep normals outward
-                               -L,   -rxEnd,   -rzEnd,   twistDegEnd);
+	// Keep radii POSITIVE; go down along -Y by using y1 = -L.
+	// Do NOT flip signs: normals are handled properly in connectRingsQuads.
+	connectRingsQuads(slices,
+		0.0f, rxStart, rzStart, twistDegStart,
+		-L, rxEnd, rzEnd, twistDegEnd);
 }
 
 // Simple end cap (TRIANGLES) for an ellipse at Y = y, facing +Y or -Y (dir = +1/-1).
@@ -2759,65 +2789,64 @@ static void drawArmDown(int side)
 	// Move down from the shoulder cap
 	glTranslatef(0, -SHO_CAP, 0);
 
-	// ---------- UPPER ARM (two longer sections for deltoid→triceps taper) ----------
+	// ---------- UPPER ARM (deltoid bulk → taper) ----------
 
-	// Upper arm A: gentle taper (deltoid bulk → mid humerus)
-	tubeSectionQuads(SLICES, UPPER_LEN * 0.55f,
-		HUM_RX0, HUM_RZ0,
-		HUM_RX1, HUM_RZ1, 0, 0);
-	glTranslatef(0, -(UPPER_LEN * 0.55f), 0);
-
-	// Upper arm B: stronger taper toward elbow
+	// Section A: fuller bulge just below shoulder
 	tubeSectionQuads(SLICES, UPPER_LEN * 0.45f,
+		HUM_RX0 * 1.05f, HUM_RZ0 * 1.08f,   // slightly puffed out
 		HUM_RX1, HUM_RZ1,
-		HUM_RX2, HUM_RZ2, 0, 0);
+		0, 0);
 	glTranslatef(0, -(UPPER_LEN * 0.45f), 0);
 
-	// ---------- ELBOW (short “ball” made of two tapered tube slices) ----------
-	// Elbow A: expand a touch
-	tubeSectionQuads(SLICES, ELB_SEG * 0.5f,
-		HUM_RX2, HUM_RZ2,
-		ELB_RX, ELB_RZ, 0, 0);
-	glTranslatef(0, -(ELB_SEG * 0.5f), 0);
-	// Elbow B: contract again (gives the olecranon bump)
-	tubeSectionQuads(SLICES, ELB_SEG * 0.5f,
-		ELB_RX, ELB_RZ,
-		PRO_RX0, PRO_RZ0, 0, 0);
-	glTranslatef(0, -(ELB_SEG * 0.5f), 0);
-	// --- ELBOW (after you place the elbow sphere) ---
-	if (side > 0) {
-		glRotatef(actRElbowFlex, 1, 0, 0);
-	}
-	else {
-		float pL[3] = { 0,0,0 };   // local grip target for left arm
-		bool havePL = false;
-	}
+	// Section B: stronger taper down toward elbow
+	tubeSectionQuads(SLICES, UPPER_LEN * 0.55f,
+		HUM_RX1, HUM_RZ1,
+		HUM_RX2 * 0.95f, HUM_RZ2 * 0.92f,   // tighter near elbow
+		0, 0);
+	glTranslatef(0, -(UPPER_LEN * 0.55f), 0);
+	// ---------- ELBOW ----------
 
-	// Add elbow flex from action pose
-	if (side > 0) glRotatef(actRElbowFlex, 1, 0, 0);
-	else          glRotatef(actLElbowFlex, 1, 0, 0);
+// Bulge outward (triceps/olecranon)
+	tubeSectionQuads(SLICES, ELB_SEG * 0.6f,
+		HUM_RX2 * 0.95f, HUM_RZ2 * 0.95f,
+		ELB_RX * 1.12f, ELB_RZ * 1.10f,
+		0, 0);
+	glTranslatef(0, -(ELB_SEG * 0.6f), 0);
+
+	// Contract again (forearm root narrower)
+	tubeSectionQuads(SLICES, ELB_SEG * 0.4f,
+		ELB_RX * 1.12f, ELB_RZ * 1.10f,
+		PRO_RX0, PRO_RZ0,
+		0, 0);
+	glTranslatef(0, -(ELB_SEG * 0.4f), 0);
+
 
 	// ---------- FOREARM (subtle pronation twist) ----------
+
 	// Proximal forearm bulk → mid
 	tubeSectionQuads(SLICES, FORE_LEN * 0.58f,
 		PRO_RX0, PRO_RZ0,
 		PRO_RX1, PRO_RZ1,
-		0.0f, TWIST_FORE * 0.5f);
+		(side > 0) ? 0.0f : (TWIST_FORE * 0.5f),
+		(side > 0) ? (TWIST_FORE * 0.5f) : 0.0f);
 	glTranslatef(0, -(FORE_LEN * 0.58f), 0);
 
 	// Mid → distal wrist taper (continue twist)
 	tubeSectionQuads(SLICES, FORE_LEN * 0.42f,
 		PRO_RX1, PRO_RZ1,
 		DST_RX, DST_RZ,
-		TWIST_FORE * 0.5f, TWIST_FORE);
+		(side > 0) ? (TWIST_FORE * 0.5f) : TWIST_FORE,
+		(side > 0) ? TWIST_FORE : (TWIST_FORE * 0.5f));
 	glTranslatef(0, -(FORE_LEN * 0.42f), 0);
 
 	// ---------- WRIST COLLAR (short tightening to match hand root) ----------
+	// (both ends same twist; no swap needed)
 	tubeSectionQuads(SLICES, WRIST_SEG,
 		DST_RX, DST_RZ,
 		DST_RX * 0.94f, DST_RZ * 0.94f,
 		TWIST_FORE, TWIST_FORE);
 	glTranslatef(0, -WRIST_SEG, 0);
+
 
 	// ---------- WRIST / HAND ORIENTATION ----------
 	float wristFlex = -10.0f;           // neutral bend
