@@ -574,7 +574,7 @@ void projection() {
 }
 
 
-
+//Lighting Function
 void lighting() {
 	if (isLightOn) {
 		   glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
@@ -1360,16 +1360,71 @@ void drawOBJ() {
 	glEnd();
 }
 
+float flameTime = 0.0f;   // global time for flame animation
+void drawFlame3D(float x, float y, float z, float baseSize) {
+	glPushMatrix();
+	glTranslatef(x, y, z);
+
+	// Enable blending for transparency
+	glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glDisable(GL_LIGHTING);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDepthMask(GL_FALSE);
+
+	// Flame flickers with sine wave
+	float size = baseSize * (0.8f + 0.3f * sin(flameTime * 5.0f));
+
+	// Draw a set of quads rotated around Y to give volume
+	int slices = 6;
+	for (int i = 0; i < slices; i++) {
+		glPushMatrix();
+		glRotatef(i * (180.0f / slices), 0, 1, 0);
+
+		glBegin(GL_TRIANGLE_FAN);
+		glColor4f(0.1294f, 0.4667f, 0.2f, 0.7f); // bright green center
+		glVertex3f(0, 0, 0);               // flame origin
+
+		glColor4f(0.0157f, 0.7373f, 0.1725f, 0.0f); // fade to transparent
+		glVertex3f(-size, size * 3, 0);
+		glVertex3f(size, size * 3, 0);
+		glVertex3f(size, 0, 0);
+		glVertex3f(-size, 0, 0);
+		glVertex3f(-size, size * 3, 0);
+		glEnd();
+
+		glPopMatrix();
+	}
+
+	glDepthMask(GL_TRUE);
+	glDisable(GL_BLEND);
+	glEnable(GL_LIGHTING);
+	glPopAttrib();
+	glPopMatrix();
+}
 
 
 void drawDragonHead() {
 	glPushMatrix();
 	glTranslatef(0, -1, 0);
 	glScalef(0.005, 0.005, 0.005);
-	glRotatef(-90, 1, 0, 0); glRotatef(90, 0, 0, 1);
-	drawOBJ();   // just draws existing vertices
+	glRotatef(-90, 1, 0, 0);
+	glRotatef(90, 0, 0, 1);
+
+	// Draw the dragon head mesh
+	drawOBJ();
+
+	glPushMatrix();
+	glRotatef(90, 1, 0, 0);
+	glRotatef(-90, 0, 0, 1);
+	// === Add continuous green flame ===
+	// Adjust (0, 50, 200) to match mouth position in your OBJ
+	drawFlame3D(0,-400,0, 200.0f);
+
+	glPopMatrix();
 	glPopMatrix();
 }
+
 //--------------------------------------------------------------------
 
 // Frame delta (seconds), stable on first call
@@ -4651,6 +4706,8 @@ void display()
 	//	OpenGL drawing
 	//--------------------------------
 	poseidon();
+	flameTime += 0.005f;   // controls flame flicker speed
+
 	//--------------------------------
 	//	End of OpenGL drawing
 	//--------------------------------
