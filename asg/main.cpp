@@ -134,6 +134,11 @@ static inline void invRigidM4(const float M[16], float Inv[16]) {
 	Inv[14] = -(Inv[2] * tx + Inv[6] * ty + Inv[10] * tz);
 }
 
+// Dragon Head
+float dragonOrbitAngle = 0.0f;
+
+
+
 
 // ---- Reusable GLU quadric ----
 static GLUquadric* gQuadric = nullptr;
@@ -227,85 +232,62 @@ GLuint loadTexture(LPCSTR filename) {
 	return texture;
 }
 
-GLuint gSky[6] = { 0,0,0,0,0,0 };  // +X, -X, +Y, -Y, +Z, -Z
 
-static void loadSkyboxTextures() {
-	gSky[0] = loadTexture("sea.bmp");   // +X
-	gSky[1] = loadTexture("sea.bmp");    // -X
-	gSky[2] = loadTexture("sea.bmp");     // +Y
-	gSky[3] = loadTexture("sea.bmp");  // -Y
-	gSky[4] = loadTexture("sea.bmp");   // +Z
-	gSky[5] = loadTexture("sea.bmp");    // -Z
+GLuint bgTex = 0;
 
-	for (int i = 0;i < 6;++i) {
-		glBindTexture(GL_TEXTURE_2D, gSky[i]);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);          // or mipmaps if you have them
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);         // avoid seams
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	}
-	glBindTexture(GL_TEXTURE_2D, 0);
-}
+GLuint loadTextureBMP(const char* filename) {
+	GLuint texID;
+	HBITMAP hBMP; BITMAP BMP;
+	hBMP = (HBITMAP)LoadImage(GetModuleHandle(NULL),
+		filename, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION | LR_LOADFROMFILE);
 
-static inline void zeroCameraTranslation() {
-	GLfloat mv[16];
-	glGetFloatv(GL_MODELVIEW_MATRIX, mv);
-	mv[12] = mv[13] = mv[14] = 0.0f;
-	glLoadMatrixf(mv);
-}
+	if (!hBMP) return 0;
 
-static inline void emitFace(GLuint tex,
-	float x0, float y0, float z0,
-	float x1, float y1, float z1,
-	float x2, float y2, float z2,
-	float x3, float y3, float z3)
-{
-	glBindTexture(GL_TEXTURE_2D, tex);
-	glBegin(GL_QUADS);
-	glTexCoord2f(0, 0); glVertex3f(x0, y0, z0);
-	glTexCoord2f(1, 0); glVertex3f(x1, y1, z1);
-	glTexCoord2f(1, 1); glVertex3f(x2, y2, z2);
-	glTexCoord2f(0, 1); glVertex3f(x3, y3, z3);
-	glEnd();
+	GetObject(hBMP, sizeof(BMP), &BMP);
+	glGenTextures(1, &texID);
+	glBindTexture(GL_TEXTURE_2D, texID);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, BMP.bmWidth, BMP.bmHeight,
+		0, GL_BGR_EXT, GL_UNSIGNED_BYTE, BMP.bmBits);
+	DeleteObject(hBMP);
+	return texID;
 }
 
 
-static void drawSkybox(float halfSize) {
-	const float s = halfSize;
+static void drawSkybox() {
+	
 
-	glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT | GL_DEPTH_BUFFER_BIT | GL_POLYGON_BIT | GL_CURRENT_BIT);
+	glDisable(GL_DEPTH_TEST);      // Background shouldn’t write depth
 	glDisable(GL_LIGHTING);
-	glDisable(GL_FOG);
-	glEnable(GL_TEXTURE_2D);
-	glEnable(GL_DEPTH_TEST);
-	glDepthMask(GL_FALSE);
-	glEnable(GL_CULL_FACE);
-	glCullFace(GL_FRONT);               // draw cube inside
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-	glColor3f(1, 1, 1);
 
+	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
-	zeroCameraTranslation();
+	glLoadIdentity();
+	glOrtho(0, 1, 0, 1, -1, 1);    // Simple 2D orthographic projection
 
-	// +X
-	emitFace(gSky[0], +s, -s, -s, +s, -s, +s, +s, +s, +s, +s, +s, -s);
-	// -X
-	emitFace(gSky[1], -s, -s, +s, -s, -s, -s, -s, +s, -s, -s, +s, +s);
-	// +Y (top)
-	emitFace(gSky[2], -s, +s, -s, +s, +s, -s, +s, +s, +s, -s, +s, +s);
-	// -Y (bottom)
-	emitFace(gSky[3], -s, -s, +s, +s, -s, +s, +s, -s, -s, -s, -s, -s);
-	// +Z (front)
-	emitFace(gSky[4], +s, -s, +s, -s, -s, +s, -s, +s, +s, +s, +s, +s);
-	// -Z (back)
-	emitFace(gSky[5], -s, -s, -s, +s, -s, -s, +s, +s, -s, -s, +s, -s);
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	glLoadIdentity();
+
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, bgTex);
+
+	glBegin(GL_QUADS);
+	glTexCoord2f(0, 0); glVertex2f(0, 0);
+	glTexCoord2f(1, 0); glVertex2f(1, 0);
+	glTexCoord2f(1, 1); glVertex2f(1, 1);
+	glTexCoord2f(0, 1); glVertex2f(0, 1);
+	glEnd();
+
+	glDisable(GL_TEXTURE_2D);
 
 	glPopMatrix();
+	glMatrixMode(GL_PROJECTION);
+	glPopMatrix();
+	glMatrixMode(GL_MODELVIEW);
 
-	glBindTexture(GL_TEXTURE_2D, 0);
-	glCullFace(GL_BACK);
-	glDepthMask(GL_TRUE);
-	glPopAttrib();
+	glEnable(GL_DEPTH_TEST);
 }
 
 
@@ -1285,6 +1267,15 @@ static void drawGroundImpactRing() {
 	glEnd();
 	glPopMatrix();
 	glPopAttrib();
+}
+
+
+void drawDragonHead()
+{
+	glPushMatrix();
+	glColor3f(0.8f, 0.8f, 0.9f); // silver/white like your reference
+	drawSphere(0.3, 2, 76);        // TEMP placeholder for dragon head
+	glPopMatrix();
 }
 
 //--------------------------------------------------------------------
@@ -4409,6 +4400,8 @@ void poseidon() {
 	glEnable(GL_DEPTH_TEST);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+	drawSkybox();
+
 	glEnable(GL_NORMALIZE);
 	glShadeModel(GL_SMOOTH);
 
@@ -4422,22 +4415,7 @@ void poseidon() {
 
 	glMatrixMode(GL_MODELVIEW);
 
-	float skyHalf = 0.0f;
-	if (isOrtho) {
-		// stay just inside the ortho box
-		skyHalf =  min(min(ORight, -OLeft),
-			min(min(OUp, -ODown),
-				min(OFar, -ONear)));
-		// e.g. with ±10 on all axes → use ~9.5
-	}
-	else {
-		// inside the perspective frustum: far / √3 is a safe bound
-		float nearZ = 1.0f, farZ = 200.0f;   // your gluPerspective values
-		skyHalf = min(farZ / 1.732f * 0.95f,  // keep corners inside far
-			max(nearZ + 0.5f, 50.0f)); // also keep it beyond the near plane
-		// e.g. ~110 is fine; 50 also works great.
-	}
-		drawSkybox(skyHalf);
+
 
 		GLfloat matrix_amb[16] = { lightPos1[1],  0,  0, 0,
 								-lightPos1[0], 0,  -lightPos1[2], -1,
@@ -4497,7 +4475,29 @@ void poseidon() {
 	rightleg();
 	glPopMatrix();
 
-	
+	// === Orbiting Dragon Heads ===
+	glPushMatrix();
+	dragonOrbitAngle += 0.3f;   // speed of rotation
+	if (dragonOrbitAngle > 360.0f) dragonOrbitAngle -= 360.0f;
+
+	// distance from center
+	float radius = 4.0f;
+
+	// Draw 3 heads spaced 120° apart
+	for (int i = 0; i < 3; ++i) {
+		float angle = dragonOrbitAngle + i * 120.0f;
+		float rad = angle * 3.14159f / 180.0f;
+
+		float x = cos(rad) * radius;
+		float z = sin(rad) * radius;
+
+		glPushMatrix();
+		glTranslatef(x, 1.5f, z);   // lift slightly above ground
+		glRotatef(-angle, 0, 1, 0); // face inward toward character
+		drawDragonHead();
+		glPopMatrix();
+	}
+	glPopMatrix();
 	
 
 
@@ -4517,6 +4517,9 @@ void poseidon() {
 	glPopMatrix();
 
 	glPopMatrix();
+
+	
+
 
 	// C water trail (world-space)
 	renderWaterTrail();
@@ -4591,9 +4594,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	//	make context current
 	if (!wglMakeCurrent(hdc, hglrc)) return false;
 	initQuadric();
-	loadSkyboxTextures();
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // not MIPMAP_LINEAR unless you build mipmaps
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	bgTex = loadTextureBMP("sea.bmp");
+
 	//--------------------------------
 	//	End initialization
 	//--------------------------------
