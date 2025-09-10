@@ -85,25 +85,47 @@ float specularLight[] = { 1.0f, 1.0f, 1.0f, 1.0f }; // White specular
 bool isLightOn = false;
 float angle = 0.0;
 
-// --- Arm pose controls (degrees) ---
-float L_shoulder_yaw = 8.0f;   // + = swing out to the side
-float L_shoulder_pitch = -10.0f;  // + = swing forward
-float L_shoulder_roll = 0.0f;   // twist
-float L_elbow_flex = 10.0f;  // + = bend elbow
+// ==== Base arm pose (idle offsets, degrees) ====
+float L_shoulder_yaw = 8.0f;
+float L_shoulder_pitch = -10.0f;
+float L_shoulder_roll = 0.0f;
+float L_elbow_flex = 10.0f;
 
 float R_shoulder_yaw = -8.0f;
 float R_shoulder_pitch = -10.0f;
 float R_shoulder_roll = 0.0f;
 float R_elbow_flex = 10.0f;
 
-// ==== Walk system (facing + locomotion + gait) ====
+// ==== Walk system (locomotion) ====
 bool  gWalking = false;
-float gHeadingDeg = 0.0f;      // 0=front(+Z), 90=left(-X), -90=right(+X), 180=back(-Z)
-float gWalkSpeed = 1.6f;      // world units / sec
-float gWalkPhase = 0.0f;      // cycles the gait
-float gStepHz = 2.2f;      // steps per second (2.2 → brisk walk)
-float gArmAmpDeg = 26.0f;     // shoulder swing amplitude
-float gLegAmpDeg = 22.0f;     // hip swing amplitude
+float gHeadingDeg = 0.0f;   // 0=front(+Z), 90=left(-X), etc.
+float gWalkSpeed = 1.6f;
+float gWalkPhase = 0.0f;
+float gStepHz = 2.2f;   // steps per sec
+
+// Limb motions generated from walk cycle
+float walkHipPitchL = 0.0f, walkHipPitchR = 0.0f;
+float walkKneeFlexL = 0.0f, walkKneeFlexR = 0.0f;
+float walkAnkleRollL = 0.0f, walkAnkleRollR = 0.0f;
+float walkShoulderSwingL = 0.0f, walkShoulderSwingR = 0.0f;
+
+// Amplitudes
+float gArmAmpDeg = 26.0f;
+float gHipAmpDeg = 25.0f;
+float gKneeAmpDeg = 40.0f;
+float gAnkleAmpDeg = 15.0f;
+
+// ==== Action overrides (e.g., fighting, aiming) ====
+float actTorsoPitch = 0, actTorsoYaw = 0, actTorsoRoll = 0;
+float actHipPitchL = 0, actHipPitchR = 0;
+float actKneeFlexL = 0, actKneeFlexR = 0;
+float actLShoulderPitch = 0, actLShoulderYaw = 0, actLShoulderRoll = 0, actLElbowFlex = 0;
+float actRShoulderPitch = 0, actRShoulderYaw = 0, actRShoulderRoll = 0, actRElbowFlex = 0;
+
+// Breathing animation state
+static float breathPhase = 0.0f;  // radians
+float breathFreq = 0.5f;          // Hz (base breathing rate)
+float breathAmp = 0.02f;          // amplitude of chest expansion
 
 static DWORD gLastTick = 0;      // for dt in action()
 
@@ -111,10 +133,6 @@ static DWORD gLastTick = 0;      // for dt in action()
 static bool  gOffhandActive = false;
 static float gOffhandTargetW[3] = { 0,0,0 };
 
-// Breathing animation state
-static float breathPhase = 0.0f;  // radians
-float breathFreq = 0.5f;          // Hz (base breathing rate)
-float breathAmp = 0.02f;          // amplitude of chest expansion
 
 // column-major OpenGL helpers
 static inline void mulPointM4(const float M[16], const float p[3], float out[3]) {
@@ -292,14 +310,9 @@ static void drawSkybox() {
 
 
 
-// ===== Action pose offsets (added on top of walk pose) =====
-static float actTorsoPitch = 0, actTorsoYaw = 0, actTorsoRoll = 0;
 
-static float actRShoulderPitch = 0, actRShoulderYaw = 0, actRShoulderRoll = 0, actRElbowFlex = 0;
-static float actLShoulderPitch = 0, actLShoulderYaw = 0, actLShoulderRoll = 0, actLElbowFlex = 0;
 
-static float actHipPitchR = 0, actHipPitchL = 0;    // at the hips
-static float actKneeFlexR = 0, actKneeFlexL = 0;    // at the knees
+
 static inline float clamp01(float t) { return t < 0 ? 0 : t>1 ? 1 : t; }
 static inline float lerp(float a, float b, float t) { t = clamp01(t); return a + (b - a) * t; }
 static inline float easeInOut(float t) { t = clamp01(t); return t * t * (3.0f - 2.0f * t); } // smoothstep
@@ -318,8 +331,6 @@ struct TrailPt { float x, y, z, life; };
 static std::vector<TrailPt> gWaterTrail;
 
 // forward decls
-static void drawTridentGeo();
-static void drawTridentHeld();     // draw at right‑hand local frame (hooked inside right arm)
 static void drawTridentOnBack();   // draw attached to back
 static void updateWeapon(float dt);
 
@@ -418,20 +429,42 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 	case WM_KEYDOWN:
 		if (wParam == VK_ESCAPE) PostQuitMessage(0);
 		else if (wParam == VK_SPACE) {
-			gHeadingDeg = 0;
-			rotateY = 0;
+			// --- Heading & position ---
+			gHeadingDeg = 0.0f;
+			rotateY = 0.0f;
 			gWalking = false;
-			gKeyW = gKeyA = gKeyS = gKeyD = false;   // clear keys
-			xPosition = 0.0f; yPosition = 0.0f; zPosition = 0.05f;
+			gKeyW = gKeyA = gKeyS = gKeyD = false;
+			xPosition = 0.0f;
+			yPosition = 0.0f;
+			zPosition = 0.05f;
 			gWalkPhase = 0.0f;
-			gWpnState = WPN_ON_BACK; gWpnTimer = 0.0f; gWpnCharge = 0.0f; gWaterTrail.clear(); gWpnKeyXDown = false;
-			actTorsoPitch = actTorsoYaw = actTorsoRoll = 0;
-			actRShoulderPitch = actRShoulderYaw = actRShoulderRoll = actRElbowFlex = 0;
-			actLShoulderPitch = actLShoulderYaw = actLShoulderRoll = actLElbowFlex = 0;
-			actHipPitchR = actHipPitchL = 0; actKneeFlexR = actKneeFlexL = 0;
 
+			// --- Weapon state ---
+			gWpnState = WPN_ON_BACK;
+			gWpnTimer = 0.0f;
+			gWpnCharge = 0.0f;
+			gWpnKeyXDown = false;
+			gWaterTrail.clear();
+
+			// --- Torso pose ---
+			actTorsoPitch = 0.0f;
+			actTorsoYaw = 0.0f;
+			actTorsoRoll = 0.0f;
+
+			// --- Arm pose (both action + walk) ---
+			actRShoulderPitch = actRShoulderYaw = actRShoulderRoll = actRElbowFlex = 0.0f;
+			actLShoulderPitch = actLShoulderYaw = actLShoulderRoll = actLElbowFlex = 0.0f;
+			walkShoulderSwingL = walkShoulderSwingR = 0.0f;
+
+			// --- Leg pose (both action + walk) ---
+			actHipPitchR = actHipPitchL = 0.0f;
+			actKneeFlexR = actKneeFlexL = 0.0f;
+			walkHipPitchL = walkHipPitchR = 0.0f;
+			walkKneeFlexL = walkKneeFlexR = 0.0f;
+			walkAnkleRollL = walkAnkleRollR = 0.0f;
 
 		}
+
 		else if (wParam == 'W') {
 			gKeyW = true;
 			gHeadingDeg = 0.0f;   rotateY = 0.0f;   gWalking = true;
@@ -1444,20 +1477,46 @@ void action() {
 
 	// --- advance gait & translate root when walking ---
 	if (gWalking) {
-		gWalkPhase += 2.0f * 3.14159265f * gStepHz * dt;  // radians
+		// Advance walk phase
+		gWalkPhase += 1.0f * 3.14159265f * gStepHz * dt;
 
-			float yaw = gHeadingDeg * 3.14159265f / 180.0f;
-			float vx = -sinf(yaw);
-			float vz = cosf(yaw);
-			
-			xPosition += vx * gWalkSpeed * dt;
-			zPosition += vz * gWalkSpeed * dt;
+		// Direction vector from heading
+		float yaw = gHeadingDeg * 3.14159265f / 180.0f;
+		float vx = -sinf(yaw);
+		float vz = cosf(yaw);
 
-			const float charRadius = 3.0f;        // tweak to your model half-width
-			xPosition = Gfx::clamp(xPosition, OLeft + charRadius, ORight - charRadius);
-			zPosition = Gfx::clamp(zPosition, ONear + charRadius, OFar - charRadius);
-			Audio::playLoop(L"walk", MP3_WALK);
+		// Position update
+		xPosition += vx * gWalkSpeed * dt;
+		zPosition += vz * gWalkSpeed * dt;
+
+		// Keep inside world bounds
+		const float charRadius = 5.0f;
+		xPosition = Gfx::clamp(xPosition, OLeft + charRadius, ORight - charRadius);
+		zPosition = Gfx::clamp(zPosition, ONear + charRadius, OFar - charRadius);
+
+		// ==== Limb animation (walk cycle only) ====
+		// Hips swing forward/back
+		walkHipPitchL = sinf(gWalkPhase) * gHipAmpDeg;
+		walkHipPitchR = -sinf(gWalkPhase) * gHipAmpDeg;
+
+		// Knees flex on swing phase
+		walkKneeFlexL = max(0.0f, -sinf(gWalkPhase)) * gKneeAmpDeg;
+		walkKneeFlexR = max(0.0f, sinf(gWalkPhase)) * gKneeAmpDeg;
+
+		// Ankles roll heel-to-toe
+		walkAnkleRollL = cosf(gWalkPhase) * gAnkleAmpDeg;
+		walkAnkleRollR = cosf(gWalkPhase + 3.14159f) * gAnkleAmpDeg;
+
+		// Arms counter-swing opposite to legs
+		walkShoulderSwingL = -sinf(gWalkPhase) * gArmAmpDeg;
+		walkShoulderSwingR = sinf(gWalkPhase) * gArmAmpDeg;
+
+		// Play looping step sound
+		Audio::playLoop(L"walk", MP3_WALK);
 	}
+
+
+
 	// === BREATHING FREQUENCY CONTROL ===
 	float speed = gWalking ? gWalkSpeed : 0.0f;
 
@@ -1722,10 +1781,33 @@ static void drawEllipseOutlineXY(float rx, float ry, float zOffset, int seg = 42
 
 void body() {
 	glEnable(GL_NORMALIZE);
-	float breathOffset = sinf(breathPhase) * breathAmp;
-	glTranslatef(0.0f, breathOffset * 2.0f, breathOffset);
-	glScalef(1.0f + breathOffset, 1.0f + breathOffset * 0.5f, 1.0f + breathOffset);
 
+	// === Breathing offset ===
+	float breathOffset = sinf(breathPhase) * breathAmp;
+
+	// === Walking offsets (extra movement) ===
+	float walkBob = 0.0f;
+	float walkTilt = 0.0f;
+	float walkTwist = 0.0f;
+
+	if (gWalking) {
+		// Bob up/down twice per gait cycle (hips go up when legs cross)
+		walkBob = sinf(2.0f * gWalkPhase) * 0.15f;   // amplitude tweak
+
+		// Torso tilt side-to-side opposite hips
+		walkTilt = sinf(gWalkPhase) * 4.0f;          // degrees left/right
+
+		// Small twist around vertical axis (counter-rotation to arms)
+		walkTwist = cosf(gWalkPhase) * 5.0f;         // degrees yaw
+	}
+
+	// Apply combined breathing + walking movement
+	glTranslatef(0.0f, breathOffset * 2.0f + walkBob, breathOffset);
+	glRotatef(walkTilt, 0, 0, 1);   // lean sideways
+	glRotatef(walkTwist, 0, 1, 0);  // torso yaw twist
+	glScalef(1.0f + breathOffset,
+		1.0f + breathOffset * 0.5f,
+		1.0f + breathOffset);
 	// Pick your light skin preset:
 	const SkinPreset SKIN = SKIN_LIGHT_TAN; // or SKIN_FAIR_ROSY / SKIN_LIGHT_TAN
 
@@ -1784,22 +1866,7 @@ void body() {
 	// ---------- ANATOMY DETAILS ON TOP OF THE TORSO ----------
 	const float BODY_H = 6.2f;         // must match your drawLoftedBody height
 	const int   SLICES = 72;
-	// front/oblique guide curves
-	if (showModelLines) {
-		drawTorsoLineAtTheta(TORSO, TORSO_N, BODY_H, 3.14159265f * 0.5f, 40);
-		drawTorsoLineAtTheta(TORSO, TORSO_N, BODY_H, 3.14159265f * 0.32f, 40);
-		drawTorsoLineAtTheta(TORSO, TORSO_N, BODY_H, 3.14159265f * 0.68f, 40);
-
-		// lower pec curve
-		glLineWidth(1.8f);
-		glColor3f(0.15f, 0.15f, 0.15f);
-		glBegin(GL_LINE_STRIP);
-		// ...
-		glEnd();
-	}
-
-
-
+	
 	// Reuse the same TORSO[] you already created above in body()
 
 	// === ABS (six-pack) ===
@@ -1830,21 +1897,17 @@ void body() {
 			SKIN_FAIR_NEUTRAL.base[2]);
 		drawEllipsoid(d.w, d.h, d.depth, 24);
 
-		//if (showModelLines) {
 			
 			glLineWidth(1.4f);
 			glColor3f(0.05f, 0.05f, 0.05f);
 			// outline in the ellipsoid's "front" plane (slight +Z so it doesn't z-fight)
 			drawEllipseOutlineXY(d.w, d.h, d.depth * 0.04f, 48);
-		//}
 		glPopMatrix();
 		};
 
 	// Render all abs pads
 	for (int i = 0;i < ABS_COUNT;i++) placeAbs(abs8[i]);
 
-
-	
 
 	// === DELTOIDS (shoulders) ===
 	// Place two ellipsoids near the upper chest/shoulder band.
@@ -1863,6 +1926,11 @@ void body() {
 
 		// Left deltoid
 		glPushMatrix();
+		if (gWalking) {
+			float pecSway = sinf(gWalkPhase) * 0.05f; // subtle chest sway
+			glTranslatef(pecSway, 0.0f, 0.0f);
+		}
+
 		glTranslatef(-a_at * 0.95f, y, b_at * 0.25f);  // slightly forward
 		//glRotatef(20.0f, 0, 1, 0);
 		glColor3f(SKIN_LIGHT_TAN.base[0],
@@ -1873,6 +1941,11 @@ void body() {
 
 		// Right deltoid
 		glPushMatrix();
+		if (gWalking) {
+			float pecSway = sinf(gWalkPhase) * 0.05f; // subtle chest sway
+			glTranslatef(pecSway, 0.0f, 0.0f);
+		}
+
 		glTranslatef(+a_at * 0.95f, y, b_at * 0.25f);
 		//glRotatef(-20.0f, 0, 1, 0);
 		glColor3f(SKIN_LIGHT_TAN.base[0],
@@ -2262,10 +2335,10 @@ static void drawCapsuleAlongZ(float r0, float r1, float h, int slices = 28) {
 	glCallList(getCapsuleList(r0, r1, h, slices));
 
 	// Optional model lines
-	if (showModelLines) {
+	/*if (showModelLines) {
 		
 		drawCapsuleWireOverlayZ(r0, r1, h);
-	}
+	}*/
 }
 
 static void drawCapsuleDownY(float rTop, float rBot, float length) {
@@ -2451,7 +2524,7 @@ static void drawTridentHeldPose() {
 	// grip point ~lower third
 	glTranslatef(0.0f, -0.28f, 0.0f);
 	// lay along forward (+Z) from the hand
-	glRotatef(+90.0f, 1, 0, 0);
+	glRotatef(-90.0f, 1, 0, 0);
 	glRotatef(+8.0f, 0, 0, 1);
 
 	// === add motion by state ===
@@ -2885,112 +2958,98 @@ static void drawArmDown(int side)
 	const float zS = b * 0.25f;
 
 	// proportions (tuned to your screenshots)
-	const int   SLICES = 20;     // grid density
+	const int   SLICES = 20;
 	const float UPPER_LEN = 1.40f;  // shoulder -> elbow
 	const float FORE_LEN = 2.35f;  // elbow -> wrist
 
-	// radius sets (elliptical; X = thickness, Z = width)
-	// Shoulder “cap” → upper arm → elbow → forearm → wrist
-	const float SHO_RX = 0.55f, SHO_RZ = 0.50f;    // deltoid cap (round)
-	const float HUM_RX0 = 0.42f, HUM_RZ0 = 0.36f;  // proximal humerus (full)
-	const float HUM_RX1 = 0.34f, HUM_RZ1 = 0.30f;  // mid humerus (taper)
-	const float HUM_RX2 = 0.30f, HUM_RZ2 = 0.27f;  // near elbow (narrowest)
+	// radius sets
+	const float SHO_RX = 0.55f, SHO_RZ = 0.50f;
+	const float HUM_RX0 = 0.42f, HUM_RZ0 = 0.36f;
+	const float HUM_RX1 = 0.34f, HUM_RZ1 = 0.30f;
+	const float HUM_RX2 = 0.30f, HUM_RZ2 = 0.27f;
 
-	const float ELB_RX = 0.33f, ELB_RZ = 0.30f;  // elbow olecranon “ball” (lo‑poly)
-	const float PRO_RX0 = 0.33f, PRO_RZ0 = 0.28f;  // proximal forearm bulk (brachioradialis)
-	const float PRO_RX1 = 0.29f, PRO_RZ1 = 0.26f;  // mid‑forearm
-	const float DST_RX = 0.22f, DST_RZ = 0.20f;  // wrist
+	const float ELB_RX = 0.33f, ELB_RZ = 0.30f;
+	const float PRO_RX0 = 0.33f, PRO_RZ0 = 0.28f;
+	const float PRO_RX1 = 0.29f, PRO_RZ1 = 0.26f;
+	const float DST_RX = 0.22f, DST_RZ = 0.20f;
 
-	// small lengths for shaping transitions
-	const float SHO_CAP = 0.35f;     // shoulder cap height
-	const float ELB_SEG = 0.30f;     // elbow bulge height
-	const float WRIST_SEG = 0.22f;   // wrist collar height
+	const float SHO_CAP = 0.35f;
+	const float ELB_SEG = 0.30f;
+	const float WRIST_SEG = 0.22f;
 
-	// pronation twist across the forearm (like your +8°)
+	// pronation twist across the forearm
 	const float TWIST_FORE = 8.0f * (float)side;
 
-	// arm pose
+	// base pose
 	const float ARM_YAW = 6.0f;  // slight inward
 	const float ARM_PITCH = 4.0f;  // slight forward
 
 	glPushMatrix();
 	glTranslatef(xS, yS, zS);
-
 	glRotatef(ARM_YAW * (float)side, 0, 1, 0);
 
-
-	
-
-
-	// swing arms opposite to legs: right arm in phase, left arm π out of phase
-	float armSwing = sinf(gWalkPhase + (side > 0 ? 0.0f : 3.14159265f)) * gArmAmpDeg;
+	// --- Shoulder swing (running-like when walking) ---
+	float armSwing = 0.0f;
+	if (gWalking) {
+		// exaggerate like running
+		float gRunArmAmpDeg = 55.0f; // strong swing
+		armSwing = sinf(gWalkPhase + (side > 0 ? 0.0f : 3.14159f)) * gRunArmAmpDeg;
+	}
 	glRotatef(ARM_PITCH + armSwing, 1, 0, 0);
+
 	// ===== additive action shoulder pose =====
 	if (side > 0) { // right
 		glRotatef(actRShoulderYaw, 0, 1, 0);
 		glRotatef(actRShoulderPitch, 1, 0, 0);
 		glRotatef(actRShoulderRoll, 0, 0, 1);
 	}
-	else {          // left
+	else {        // left
 		glRotatef(actLShoulderYaw, 0, 1, 0);
 		glRotatef(actLShoulderPitch, 1, 0, 0);
 		glRotatef(actLShoulderRoll, 0, 0, 1);
 	}
 
-
-	// ---------- SHOULDER CAP (two short dome-like sections, quads only) ----------
+	// ---------- SHOULDER CAP ----------
 	glPushMatrix();
-
-	// Section A: very short bulge from torso to deltoid roundness
 	tubeSectionQuads(SLICES, SHO_CAP * 0.5f,
 		SHO_RX * 0.75f, SHO_RZ * 0.72f,
 		SHO_RX, SHO_RZ, 0, 0);
 	glTranslatef(0, -SHO_CAP * 0.5f, 0);
 
-	// Section B: blend into proximal humerus (slightly narrower, starts arm)
 	tubeSectionQuads(SLICES, SHO_CAP * 0.5f,
 		SHO_RX, SHO_RZ,
 		HUM_RX0, HUM_RZ0, 0, 0);
 	glPopMatrix();
 
-	// Move down from the shoulder cap
 	glTranslatef(0, -SHO_CAP, 0);
 
-	// ---------- UPPER ARM (deltoid bulk → taper) ----------
-
-	// Section A: fuller bulge just below shoulder
+	// ---------- UPPER ARM ----------
 	tubeSectionQuads(SLICES, UPPER_LEN * 0.45f,
-		HUM_RX0 * 1.05f, HUM_RZ0 * 1.08f,   // slightly puffed out
-		HUM_RX1, HUM_RZ1,
-		0, 0);
+		HUM_RX0 * 1.05f, HUM_RZ0 * 1.08f,
+		HUM_RX1, HUM_RZ1, 0, 0);
 	glTranslatef(0, -(UPPER_LEN * 0.45f), 0);
 
-	// Section B: stronger taper down toward elbow
 	tubeSectionQuads(SLICES, UPPER_LEN * 0.55f,
 		HUM_RX1, HUM_RZ1,
-		HUM_RX2 * 0.95f, HUM_RZ2 * 0.92f,   // tighter near elbow
-		0, 0);
+		HUM_RX2 * 0.95f, HUM_RZ2 * 0.92f, 0, 0);
 	glTranslatef(0, -(UPPER_LEN * 0.55f), 0);
-	// ---------- ELBOW ----------
 
-// Bulge outward (triceps/olecranon)
+	// ---------- ELBOW ----------
 	tubeSectionQuads(SLICES, ELB_SEG * 0.6f,
 		HUM_RX2 * 0.95f, HUM_RZ2 * 0.95f,
-		ELB_RX * 1.12f, ELB_RZ * 1.10f,
-		0, 0);
+		ELB_RX * 1.12f, ELB_RZ * 1.10f, 0, 0);
 	glTranslatef(0, -(ELB_SEG * 0.6f), 0);
 
-	// Contract again (forearm root narrower)
 	tubeSectionQuads(SLICES, ELB_SEG * 0.4f,
 		ELB_RX * 1.12f, ELB_RZ * 1.10f,
-		PRO_RX0, PRO_RZ0,
-		0, 0);
+		PRO_RX0, PRO_RZ0, 0, 0);
 	glTranslatef(0, -(ELB_SEG * 0.4f), 0);
 
+	// ---------- FOREARM ----------
+	// Add elbow flex when walking (run-like)
+	float elbowFlex = (gWalking ? 75.0f : 10.0f); // 75° bend if walking (run style)
+	glRotatef(elbowFlex + (side > 0 ? actRElbowFlex : actLElbowFlex), 1, 0, 0);
 
-	// ---------- FOREARM (subtle pronation twist) ----------
-
-	// Proximal forearm bulk → mid
 	tubeSectionQuads(SLICES, FORE_LEN * 0.58f,
 		PRO_RX0, PRO_RZ0,
 		PRO_RX1, PRO_RZ1,
@@ -2998,7 +3057,6 @@ static void drawArmDown(int side)
 		(side > 0) ? (TWIST_FORE * 0.5f) : 0.0f);
 	glTranslatef(0, -(FORE_LEN * 0.58f), 0);
 
-	// Mid → distal wrist taper (continue twist)
 	tubeSectionQuads(SLICES, FORE_LEN * 0.42f,
 		PRO_RX1, PRO_RZ1,
 		DST_RX, DST_RZ,
@@ -3006,36 +3064,17 @@ static void drawArmDown(int side)
 		(side > 0) ? TWIST_FORE : (TWIST_FORE * 0.5f));
 	glTranslatef(0, -(FORE_LEN * 0.42f), 0);
 
-	// ---------- WRIST COLLAR (short tightening to match hand root) ----------
-	// (both ends same twist; no swap needed)
+	// ---------- WRIST ----------
 	tubeSectionQuads(SLICES, WRIST_SEG,
 		DST_RX, DST_RZ,
 		DST_RX * 0.94f, DST_RZ * 0.94f,
 		TWIST_FORE, TWIST_FORE);
 	glTranslatef(0, -WRIST_SEG, 0);
 
-
-	// ---------- WRIST / HAND ORIENTATION ----------
-	float wristFlex = -10.0f;           // neutral bend
-	float wristRoll = 8.0f * side;      // small inward roll by default
-
-	if (side > 0) { // weapon hand (right)
-		if (gWpnState == WPN_X_SWEEP) {
-			// Overhand grip (palm-down), not upside down
-			// add a little untwist through the sweep for life
-			float t = clamp01(gWpnTimer / 0.28f);
-			wristRoll = -70.0f + 20.0f * (t - 0.5f);   // start rolled-in, ease out a bit
-			wristFlex = -8.0f;
-		}
-		else if (gWpnState == WPN_X_CHARGING) {
-			// keep overhand while drawing back
-			wristRoll = -50.0f;
-			wristFlex = -6.0f;
-		}
-	}
-
-	glRotatef(wristFlex, 1, 0, 0);   // bend
-	glRotatef(wristRoll, 0, 0, 1);   // roll controls palm up/down
+	float wristFlex = -10.0f;
+	float wristRoll = 8.0f * side;
+	glRotatef(wristFlex, 1, 0, 0);
+	glRotatef(wristRoll, 0, 0, 1);
 
 	bool grip = (gWpnState == WPN_IN_HAND ||
 		gWpnState == WPN_Z_COMBO ||
@@ -3043,8 +3082,6 @@ static void drawArmDown(int side)
 		gWpnState == WPN_X_SWEEP ||
 		gWpnState == WPN_C_WATERSKIM);
 
-
-	// draw hand (your QUAD/TRI version)
 	if (side > 0) {
 		drawHandNatural(side, grip);
 
@@ -3058,7 +3095,7 @@ static void drawArmDown(int side)
 		}
 	}
 	else {
-		drawHandNatural(-1,grip);
+		drawHandNatural(-1, grip);
 
 		if (grip) {
 			if (showModelLines) drawWireOverlay([] {drawHandNatural(-1, true);});
@@ -3072,13 +3109,14 @@ static void drawArmDown(int side)
 
 
 
-	
+
 
 	if (side < 0) gOffhandActive = false;
 
 
 	glPopMatrix();
 }
+
 
 
 // Public wrappers you call in your scene:
@@ -3296,29 +3334,6 @@ static void drawFoot(int side /*-1 left, +1 right*/) {
 
 // ---- SARONG (towel) helpers -----------------------------------------------
 
-// A thin elliptical ring around the pelvis (belt)
-static void drawSarongBeltdrawSarongBelt(float a, float b, float thickness) {
-	const int slices = 48;
-	const float h = thickness;
-	glPushMatrix();
-	// build a short cylinder by sweeping an ellipse
-	for (int i = 0; i < slices; ++i) {
-		float t0 = (float)i / slices * 6.28318530718f;
-		float t1 = (float)(i + 1) / slices * 6.28318530718f;
-		float c0 = cosf(t0), s0 = sinf(t0);
-		float c1 = cosf(t1), s1 = sinf(t1);
-		float x0 = a * c0, z0 = b * s0;
-		float x1 = a * c1, z1 = b * s1;
-
-		glBegin(GL_QUADS);
-		glNormal3f(c0, 0, s0); glVertex3f(x0, 0, z0);
-		glNormal3f(c0, 0, s0); glVertex3f(x0, -h, z0);
-		glNormal3f(c1, 0, s1); glVertex3f(x1, -h, z1);
-		glNormal3f(c1, 0, s1); glVertex3f(x1, 0, z1);
-		glEnd();
-	}
-	glPopMatrix();
-}
 
 // A rectangular cloth panel that hangs down along -Y.
 // width is along X (wrap), thickness is along Z.
@@ -3369,7 +3384,7 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	// match body skin
 	const SkinPreset& SKIN = SKIN_LIGHT_TAN;
 	applySkinMaterial(SKIN.base);
-		glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
+	glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
 
 	// anchor to hip ring
 	const float HIP_YN = 0.16f;
@@ -3386,80 +3401,72 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 
 	// proportions
 	const float THIGH_LEN = 1.60f;
-	const float SHIN_LEN = 4.60f;      // fixed (was 0.65f by mistake)
+	const float SHIN_LEN = 4.60f;
 	const float HIP_R = 0.62f;
 	const float THIGH_R0 = 0.62f, THIGH_R1 = 0.00f;
 	const float KNEE_R = 0.40f;
-	const float CALF_R0 = 0.44f, CALF_R1 = 0.30f; // calf bulge -> ankle
+	const float CALF_R0 = 0.44f, CALF_R1 = 0.30f;
 	const float ANKLE_R = 0.24f;
 
-	// relaxed pose
-	const float LEG_YAW = 5.0f * (float)side;   // slight turnout
-	const float LEG_PITCH = 3.5f;                 // a touch forward
+	// base relaxed pose
+	const float BASE_LEG_YAW = 5.0f * (float)side; // slight turnout
+	const float BASE_LEG_PITCH = 3.5f;               // slight forward
 
 	glPushMatrix();
 	glTranslatef(xHip, yHip, zHip);
 
-	// blend deltoid-like hip cap into torso (prevents gap)
+	// blend deltoid-like hip cap into torso
 	glPushMatrix();
 	glTranslatef(0.0f, -0.08f, -0.03f);
 	drawEllipsoid(HIP_R * 1.02f, HIP_R * 0.96f, HIP_R * 1.02f, 28);
 	glPopMatrix();
 
-	// aim the leg
-	glRotatef(LEG_YAW, 0, 1, 0);
-	glRotatef(LEG_PITCH, 1, 0, 0);
-	// Add hip pitch from action
-	if (side > 0) glRotatef(actHipPitchR, 1, 0, 0);
-	else          glRotatef(actHipPitchL, 1, 0, 0);
+	// ---- HIP joint rotation (combined base + walk + action) ----
+	float hipPitch = BASE_LEG_PITCH
+		+ (side > 0 ? walkHipPitchR : walkHipPitchL)   // walk cycle
+		+ (side > 0 ? actHipPitchR : actHipPitchL);   // action offset
+	float hipYaw = BASE_LEG_YAW;
+	glRotatef(hipYaw, 0, 1, 0);
+	glRotatef(hipPitch, 1, 0, 0);
 
-	glTranslatef(0, -THIGH_LEN, 0);
-	drawSphere(KNEE_R, 20, 20);
-
-	// legs swing opposite to arms: right leg π out of phase vs right arm
-	float legSwing = -sinf(gWalkPhase + (side > 0 ? 3.14159265f : 0.0f)) * gLegAmpDeg;
-	glRotatef(legSwing, 1, 0, 0);
-
-
-	// --- sarong panel that follows this leg ---
-	glColor3f(0.83f, 0.69f, 0.22f);
-	drawSarongPanel(/*halfW*/0.53f, /*len*/THIGH_LEN * 0.75f, /*halfT*/0.53f);
-	// restore skin color for the leg
-		glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
-	// -----------------------------------------
-
-	// THIGH (slight inward taper)
+	// thigh
 	drawCapsuleDownY(THIGH_R0, THIGH_R1, THIGH_LEN);
 
-	// KNEE joint sphere + patella hint
-	glTranslatef(0, -THIGH_LEN, 0);
+	// --- knee joint sphere ---
+	glTranslatef(0, -THIGH_LEN, -0.5);
 	drawSphere(KNEE_R, 20, 20);
+
+	// patella hint
 	glPushMatrix();
-	glTranslatef(0.0f, -KNEE_R * 0.15f, KNEE_R * 0.45f);   // patella forward
+	glTranslatef(0.0f, -KNEE_R * 0.15f, KNEE_R * 0.45f);
 	drawEllipsoid(0.18f, 0.14f, 0.10f, 16);
 	glPopMatrix();
 
-	// CALF / SHIN (calf bulge high, taper to ankle)
-	float kneeFlex = (side > 0 ? actKneeFlexR : actKneeFlexL);
-	glRotatef(1.5f + kneeFlex, 1, 0, 0);
+	// --- knee flex rotation (APPLY HERE before shin) ---
+	float kneeFlex = (side > 0 ? walkKneeFlexR : walkKneeFlexL)
+		+ (side > 0 ? actKneeFlexR : actKneeFlexL);
+	glRotatef(kneeFlex, 1, 0, 0);
 
+	// --- shin / calf (hinges correctly off knee sphere now) ---
 	drawCapsuleDownY(CALF_R0, CALF_R1, SHIN_LEN * 0.55f);
-	// slight second segment to reach ankle length and create nicer curve
 	glTranslatef(0, -(SHIN_LEN * 0.55f), 0);
 	drawCapsuleDownY(CALF_R1, ANKLE_R * 0.95f, SHIN_LEN * 0.45f);
 
-	// ANKLE
+	// ---- ANKLE joint rotation (combined walk + action) ----
+	float ankleRoll = (side > 0 ? walkAnkleRollR : walkAnkleRollL);
+	glRotatef(ankleRoll, 1, 0, 0);
 
-	glTranslatef(0, -(SHIN_LEN * -0.05f), 0);
-	glScalef(1,2.5f,0.9);
-
+	// ankle
+	glTranslatef(0, -0.05f, 0);
+	glScalef(1, 2.5f, 0.9f);
 	drawSphere(ANKLE_R, 18, 18);
 
-	// FOOT
+	// foot
 	drawFoot(side);
 
 	glPopMatrix();
 }
+
 
 // Elliptical frustum skirt (top ellipse -> bottom ellipse), with optional caps.
 static void drawEllipticFrustum(float yTop, float yBot,
@@ -3512,61 +3519,44 @@ static void drawEllipticFrustum(float yTop, float yBot,
 // A skirt that hugs the torso at its top, then flares slightly toward the legs.
 static void drawSarongHuggingTorso(float pelvisY)
 {
-	// color/material — same gold you use for the sarong
+	// gold sarong material
 	glColor3f(0.83f, 0.69f, 0.22f);
 
-	// pull torso profile to compute ellipses
+	// pull torso profile
 	const EllipseProfile* T; int TN; float BODY_H;
 	getTorsoProfile(T, TN, BODY_H);
 
-	// choose the top at the pelvis/hip band; bottom several units down
-	float yTop = pelvisY + 0.02f;   // lift a hair to avoid z-fight
-	float yBot = pelvisY - 6.0f;    // hem (adjust to taste)
+	// choose top/bottom
+	float yTop = pelvisY + 0.02f;
+	float yBot = pelvisY - 6.0f;
 
-	// normalized heights for sampling
+	// normalized heights
 	float ynTop = yTop / BODY_H;
-	float ynBot = (((0.0f) > ((((1.0f) < ((pelvisY - 0.12f) / BODY_H)) ? (1.0f) : ((pelvisY - 0.12f) / BODY_H)))) ? (0.0f) : ((((1.0f) < ((pelvisY - 0.12f) / BODY_H)) ? (1.0f) : ((pelvisY - 0.12f) / BODY_H))));
+	float ynBot = Gfx::clamp((pelvisY - 0.12f) / BODY_H, 0.0f, 1.0f);
 
-	// sample torso half-width/depth and add small safety inflation to kill gaps
+	// top ellipse (hug torso tightly)
 	float aTop = sampleHalfWidthA(T, TN, ynTop) * 1.020f;
 	float bTop = sampleHalfDepthB(T, TN, ynTop) * 1.020f;
 
-	// bottom ellipse — a little wider so it covers the thighs
+	// base bottom ellipse (covers thighs)
 	float aBot = sampleHalfWidthA(T, TN, ynBot) * 1.18f;
 	float bBot = sampleHalfDepthB(T, TN, ynBot) * 1.18f;
 
-	// draw the frustum
+	// === Expansion due to walking legs ===
+	// compute expansion factor from current hip swing amplitude
+	float legSwingL = fabsf(sinf(gWalkPhase)) * gHipAmpDeg;  // left hip forward
+	float legSwingR = fabsf(sinf(gWalkPhase + 5.14159f)) * gHipAmpDeg; // right hip forward
+	float swingMax = fmaxf(legSwingL, legSwingR);
+
+	// scale bottom ellipse outward when legs apart
+	float expand = 1.0f + 0.015f * swingMax;  // tweak multiplier for stronger flare
+	aBot *= expand;
+	bBot *= expand;
+
+	// draw sarong frustum
 	drawEllipticFrustum(yTop, yBot, aTop, bTop, aBot, bBot, 72);
-
-	// Optional: show model lines for the sarong (V to toggle)
-	if (showModelLines) {
-		glLineWidth(1.2f);
-		glColor3f(0, 0, 0);
-
-		// two outlines: top rim and bottom rim
-		auto rim = [](float y, float a, float b, int seg) {
-			glBegin(GL_LINE_LOOP);
-			for (int i = 0; i < seg; ++i) {
-				float t = (float)i / (float)seg * 6.28318530718f;
-				glVertex3f(a * cosf(t), y, b * sinf(t));
-			}
-			glEnd();
-			};
-		rim(yTop, aTop, bTop, 72);
-		rim(yBot, aBot, bBot, 72);
-
-		// a few vertical “seams”
-		glBegin(GL_LINES);
-		for (int k = 0; k < 8; ++k) {
-			float t = (float)k * (6.28318530718f / 8.0f);
-			float c = cosf(t), s = sinf(t);
-			glVertex3f(aTop * c, yTop, bTop * s);
-			glVertex3f(aBot * c, yBot, bBot * s);
-		}
-		glEnd();
-
-	}
 }
+
 
 
 
@@ -4185,6 +4175,24 @@ void head(){
 
 	// slight forward offset so jaw sits a hair in front of torso line
 	glTranslatef(0.0f, 0.0f, bNeck*0.04f);
+	// === Walking dynamics ===
+	if (gWalking) {
+		// Vertical bob (reduced amplitude vs torso bob)
+		float headBob = sinf(2.0f * gWalkPhase) * 0.10f;
+		glTranslatef(0.0f, headBob, 0.0f);
+
+		// Side sway: head shifts opposite to hips
+		float headSway = -sinf(gWalkPhase) * 0.08f;
+		glTranslatef(headSway, 0.0f, 0.0f);
+
+		// Counter-yaw: cancel some torso twist so gaze stays forward
+		float headYaw = -cosf(gWalkPhase) * 3.5f;
+		glRotatef(headYaw, 0, 1, 0);
+
+		// Nod (tiny pitch oscillation)
+		float headPitch = sinf(gWalkPhase * 2.0f) * 2.0f;
+		glRotatef(headPitch, 1, 0, 0);
+	}
 
 	// ================= Neck =================
 	//glPushMatrix();
@@ -4199,7 +4207,6 @@ void head(){
 	// ================= Skull =================
 	glPushMatrix();
 	drawEllipsoid(SKULL_RX, SKULL_RY, SKULL_RZ, 36);
-	//if (showModelLines) headGuides(SKULL_RX, SKULL_RY, SKULL_RZ);
 	glPopMatrix();
 
 	const float eyeY = -SKULL_RY * 0.22f;
@@ -4605,8 +4612,12 @@ void poseidon() {
 	}
 	head();
 	body();
+
+	glPushMatrix();
+	glRotated(180, 0, 1, 0);
 	leftarm();
 	rightarm();
+	glPopMatrix();
 	glRotatef(actTorsoYaw, 0, 1, 0);
 	glRotatef(actTorsoPitch, 1, 0, 0);
 	glRotatef(actTorsoRoll, 0, 0, 1);
