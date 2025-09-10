@@ -3,7 +3,9 @@
 #include <windowsx.h>
 #include <gl/GL.h>
 #include <gl/GLU.h>
-
+#include <fstream>
+#include <sstream>
+#include <iostream>
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
@@ -12,8 +14,8 @@
 #include <string>
 
 // ==== Linker pragmas (Windows) ====
-#pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "OpenGL32.lib")
+#pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "glu32.lib")
 
 #ifndef GL_CLAMP_TO_EDGE
@@ -136,9 +138,6 @@ static inline void invRigidM4(const float M[16], float Inv[16]) {
 
 // Dragon Head
 float dragonOrbitAngle = 0.0f;
-
-
-
 
 // ---- Reusable GLU quadric ----
 static GLUquadric* gQuadric = nullptr;
@@ -627,6 +626,7 @@ void lighting() {
 
 
 }
+
 
 
 
@@ -1269,15 +1269,107 @@ static void drawGroundImpactRing() {
 	glPopAttrib();
 }
 
+// Draw Orbit
 
-void drawDragonHead()
-{
-	glPushMatrix();
-	glColor3f(0.8f, 0.8f, 0.9f); // silver/white like your reference
-	drawSphere(0.3, 2, 76);        // TEMP placeholder for dragon head
-	glPopMatrix();
+struct Vertex {
+	float x, y, z;
+	float nx, ny, nz;
+	float u, v;
+};
+
+std::vector<Vertex> objVertices;
+std::vector<Vertex> dragonHeadVertices;
+
+
+bool loadOBJ(const char* path) {
+	std::ifstream file(path);
+	if (!file.is_open()) {
+		std::cerr << "Cannot open OBJ file: " << path << std::endl;
+		return false;
+	}
+
+	std::vector<float> tempPos, tempNorm, tempUV;
+	std::vector<unsigned int> vIdx, uvIdx, nIdx;
+
+	std::string line;
+	while (std::getline(file, line)) {
+		std::stringstream ss(line);
+		std::string type; ss >> type;
+
+		if (type == "v") { // vertex position
+			float x, y, z; ss >> x >> y >> z;
+			tempPos.insert(tempPos.end(), { x,y,z });
+		}
+		else if (type == "vt") { // texture coord
+			float u, v; ss >> u >> v;
+			tempUV.insert(tempUV.end(), { u,v });
+		}
+		else if (type == "vn") { // normal
+			float nx, ny, nz; ss >> nx >> ny >> nz;
+			tempNorm.insert(tempNorm.end(), { nx,ny,nz });
+		}
+		else if (type == "f") { // face
+			for (int i = 0;i < 3;i++) {
+				std::string vert; ss >> vert;
+				unsigned int vi = 0, ti = 0, ni = 0;
+				sscanf_s(vert.c_str(), "%d/%d/%d", &vi, &ti, &ni);
+
+				vIdx.push_back(vi); uvIdx.push_back(ti); nIdx.push_back(ni);
+			}
+		}
+	}
+
+	for (size_t i = 0;i < vIdx.size();i++) {
+		Vertex v;
+		v.x = tempPos[(vIdx[i] - 1) * 3 + 0];
+		v.y = tempPos[(vIdx[i] - 1) * 3 + 1];
+		v.z = tempPos[(vIdx[i] - 1) * 3 + 2];
+
+		v.u = tempUV.size() ? tempUV[(uvIdx[i] - 1) * 2 + 0] : 0;
+		v.v = tempUV.size() ? tempUV[(uvIdx[i] - 1) * 2 + 1] : 0;
+
+		v.nx = tempNorm.size() ? tempNorm[(nIdx[i] - 1) * 3 + 0] : 0;
+		v.ny = tempNorm.size() ? tempNorm[(nIdx[i] - 1) * 3 + 1] : 0;
+		v.nz = tempNorm.size() ? tempNorm[(nIdx[i] - 1) * 3 + 2] : 1;
+
+		objVertices.push_back(v);
+	}
+
+	return true;
 }
 
+void initModels() {
+	loadOBJ("10054_Whale_v2_L3.obj");
+	dragonHeadVertices = objVertices;  // copy loaded vertices
+}
+
+
+void drawOBJ() {
+	glBegin(GL_TRIANGLES);
+	for (auto& v : objVertices) {
+		// Decide color based on Y position
+		if (v.z > 0)
+			glColor3f(0.6156f, 0.7725, 0.8941);
+		else
+			glColor3f(1.0f, 1.0f, 1.0f);
+
+		glNormal3f(v.nx, v.ny, v.nz);
+		glTexCoord2f(v.u, v.v);
+		glVertex3f(v.x, v.y, v.z);
+	}
+	glEnd();
+}
+
+
+
+void drawDragonHead() {
+	glPushMatrix();
+	glTranslatef(0, -1, 0);
+	glScalef(0.005, 0.005, 0.005);
+	glRotatef(-90, 1, 0, 0); glRotatef(90, 0, 0, 1);
+	drawOBJ();   // just draws existing vertices
+	glPopMatrix();
+}
 //--------------------------------------------------------------------
 
 // Frame delta (seconds), stable on first call
@@ -4476,6 +4568,7 @@ void poseidon() {
 	glPopMatrix();
 
 	// === Orbiting Dragon Heads ===
+	
 	glPushMatrix();
 	dragonOrbitAngle += 0.3f;   // speed of rotation
 	if (dragonOrbitAngle > 360.0f) dragonOrbitAngle -= 360.0f;
@@ -4494,7 +4587,9 @@ void poseidon() {
 		glPushMatrix();
 		glTranslatef(x, 1.5f, z);   // lift slightly above ground
 		glRotatef(-angle, 0, 1, 0); // face inward toward character
+		glPushAttrib(GL_CURRENT_BIT);
 		drawDragonHead();
+		glPopAttrib();
 		glPopMatrix();
 	}
 	glPopMatrix();
@@ -4595,7 +4690,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	if (!wglMakeCurrent(hdc, hglrc)) return false;
 	initQuadric();
 	bgTex = loadTextureBMP("sea.bmp");
-
+	initModels();
 	//--------------------------------
 	//	End initialization
 	//--------------------------------
