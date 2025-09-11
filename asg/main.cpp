@@ -150,6 +150,16 @@ float gBowAngle = 0.0f;
 bool gBowAnimating = false;
 bool gBowed = false;   // false = standing, true = bowed
 
+float gSquatDegTorso = 0.0f;     // thigh rotation
+float gThighDegTorso = 0.0f;    // shin rotation
+bool gSquatAnimating = false;
+bool gSquatted = false;
+float gSquatThigh = 0;
+
+bool  gJumping = false;
+float gJumpTime = 0.0f;
+bool gJumped = false;
+
 static DWORD gLastTick = 0;      // for dt in action()
 
 // --- Off-hand (left) grip target, world space ---
@@ -593,7 +603,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 	
 		else if (wParam == 'V') showModelLines = !showModelLines;
 		else if (wParam == 'B') { if (gWpnState == WPN_ON_BACK) { gWpnState = WPN_EQUIP_ANIM; gWpnTimer = 0;gElbowBend = 0;gShoulderOpen
-			= 0;
+			= 0;gSquatAnimating = true;gSquatted = false;
  }
 		else { gWpnState = WPN_ON_BACK; gWaterTrail.clear(); }
  }
@@ -656,10 +666,28 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			gMarchAngle = 0.0f;
 			gMarchTime = 0.0f;
 			}
+		
 		else if (wParam == '6') {
-				if (gWpnState != WPN_IN_HAND) {
+			if (!gSquatAnimating) {
+				gSquatAnimating = true;
+				gSquatted = !gSquatted;   // toggle state
+			}
+			}
+		
+		else if (wParam == '7') {
+				if (!gJumping && !gSquatAnimating) {
+					// crouch first
+					gSquatAnimating = true;
+					gSquatted = true;   // go down
+					gJumping = true;
+					gJumped = false;
+					gJumpTime = 0.0f;
+				}
+				}
+		else if (wParam == '8') {
+				if (gWpnState != WPN_IN_HAND && !gSquatted) {
 					gElbowBend = 0;
-					gShoulderOpen						= 0;
+					gShoulderOpen = 0;
 					if (!gBowAnimating) {
 						gBowAnimating = true;
 						gBowed = !gBowed;   // toggle state
@@ -1612,7 +1640,7 @@ void action() {
 	const float dt = frameDeltaSeconds();
 
 	// --- advance gait & translate root when walking ---
-	if (gWalking) {
+	if (gWalking && !gSquatted) {
 		// Advance walk phase
 		gWalkPhase += 1.0f * 3.14159265f * gStepHz * dt;
 
@@ -1748,6 +1776,61 @@ void action() {
 			}
 		}
 	}
+
+	if (gJumping) {
+
+		if (gSquatAnimating) {
+			if (gSquatted) {
+				gSquatDegTorso += 1.0f; if (gSquatDegTorso > 20) gSquatDegTorso = 20;
+				gThighDegTorso += 2.0f; if (gThighDegTorso > 80) gThighDegTorso = 80;
+				gSquatThigh += 0.2f;if (gSquatThigh > 1.6) gSquatThigh = 1.6;
+				if (gSquatDegTorso >= 20 && gThighDegTorso >= 80 && gSquatThigh >= 1.6) gSquatted = false;
+			}
+			else {
+				gSquatDegTorso -= 1.0f; if (gSquatDegTorso < 0) gSquatDegTorso = 0;
+				gThighDegTorso -= 2.0f; if (gThighDegTorso < 0) gThighDegTorso = 0;
+				gSquatThigh -= 0.2f;if (gSquatThigh < 0) gSquatThigh = 0;
+
+				if (gSquatDegTorso <= 0 && gThighDegTorso <= 0 && gSquatThigh <= 0) gSquatAnimating = false;
+			}
+		}
+
+		if (gSquatAnimating == false && gSquatted == false) {
+			if (!gJumped) {
+				gJumpTime += 0.2;
+				if (gJumpTime > 4)
+				{
+					 gJumpTime = 4; gJumped = true;
+				}
+			
+			}
+			else {
+				gJumpTime -= 0.1;
+				if (gJumpTime <= 0) gJumping = false; 
+			}
+
+		}
+	}
+
+	if (gSquatAnimating && !gJumping) {
+		if (gSquatted) {
+			gSquatDegTorso += 1.0f; if (gSquatDegTorso > 20) gSquatDegTorso = 20;
+			gThighDegTorso += 2.0f; if (gThighDegTorso > 80) gThighDegTorso = 80;
+			gSquatThigh += 0.2f;if (gSquatThigh > 1.6) gSquatThigh = 1.6;
+			if (gSquatDegTorso >= 20 && gThighDegTorso >= 80 && gSquatThigh>=1.6) gSquatAnimating = false;
+		}
+		else {
+			gSquatDegTorso -= 1.0f; if (gSquatDegTorso < 0) gSquatDegTorso = 0;
+			gThighDegTorso -= 2.0f; if (gThighDegTorso < 0) gThighDegTorso = 0;
+			gSquatThigh -= 0.2f;if (gSquatThigh < 0) gSquatThigh = 0;
+
+			if (gSquatDegTorso <= 0 && gThighDegTorso <= 0 && gSquatThigh <= 0) gSquatAnimating = false;
+		}
+	}
+
+	
+
+
 
 
 	// === BREATHING FREQUENCY CONTROL ===
@@ -3651,7 +3734,7 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	const float THIGH_LEN = 1.60f;
 	const float SHIN_LEN = 4.60f;
 	const float HIP_R = 0.62f;
-	const float THIGH_R0 = 0.82f, THIGH_R1 = 0.00f;
+	const float THIGH_R0 = 0.82f, THIGH_R1 = 0.2f;
 	const float KNEE_R = 0.40f;
 	const float CALF_R0 = 0.44f, CALF_R1 = 0.30f;
 	const float ANKLE_R = 0.24f;
@@ -3677,13 +3760,21 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	glRotatef(hipYaw, 0, 1, 0);
 	glRotatef(hipPitch, 1, 0, 0);
 
+	glPushMatrix();
+	//if (gSquatAnimating) {
+	
+		glTranslatef(0, 0, -gSquatThigh);
+		glRotatef(gThighDegTorso, 1, 0, 0); //Squat, thigh will bend for 65 clockwise
+
+	//}
 	// thigh
 	drawCapsuleDownY(THIGH_R0, THIGH_R1, THIGH_LEN);
+	glPopMatrix();
 	if (side > 0) {
 		glRotatef(+gMarchAngle, 1, 0, 0);   // forward/back swing
 
-	}else glRotatef(-gMarchAngle, 1, 0, 0);   // opposite swing
-
+	}
+	else glRotatef(-gMarchAngle, 1, 0, 0);   // opposite swing
 	// --- knee joint sphere ---
 	glTranslatef(0, -THIGH_LEN, -0.5);
 	drawSphere(KNEE_R, 20, 20);
@@ -3692,6 +3783,7 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	glPushMatrix();
 	glTranslatef(0.0f, -KNEE_R * 0.15f, KNEE_R * 0.45f);
 	drawEllipsoid(0.18f, 0.14f, 0.10f, 16);
+
 	glPopMatrix();
 
 	// --- knee flex rotation (APPLY HERE before shin) ---
@@ -3701,6 +3793,11 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 
 	// --- shin / calf (hinges correctly off knee sphere now) ---
 	drawCapsuleDownY(CALF_R0, CALF_R1, SHIN_LEN * 0.55f);
+	//Knee Protector panel
+	glColor3f(0.5,0.5,0.5);
+	drawSarongPanel(/*halfW*/0.33f, /*len*/THIGH_LEN * 0.45f, /*halfT*/0.33f);
+	// restore skin color for the leg
+	glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
 	glTranslatef(0, -(SHIN_LEN * 0.55f), 0);
 	drawCapsuleDownY(CALF_R1, ANKLE_R * 0.95f, SHIN_LEN * 0.45f);
 
@@ -3779,15 +3876,15 @@ static void drawSarongHuggingTorso(float pelvisY)
 	getTorsoProfile(T, TN, BODY_H);
 
 	// choose top/bottom
-	float yTop = pelvisY + 0.02f;
-	float yBot = pelvisY - 6.0f;
+	float yTop = (pelvisY + 0.02f - gSquatThigh);
+	float yBot = pelvisY - 6.0f - gSquatThigh * 0.5f;
 
 	// normalized heights
 	float ynTop = yTop / BODY_H;
 	float ynBot = Gfx::clamp((pelvisY - 0.12f) / BODY_H, 0.0f, 1.0f);
 
 	// top ellipse (hug torso tightly)
-	float aTop = sampleHalfWidthA(T, TN, ynTop) * 1.020f;
+	float aTop = (sampleHalfWidthA(T, TN, ynTop) * 1.020f)*0.8;
 	float bTop = sampleHalfDepthB(T, TN, ynTop) * 1.020f;
 
 	// base bottom ellipse (covers thighs)
@@ -3801,12 +3898,26 @@ static void drawSarongHuggingTorso(float pelvisY)
 	float swingMax = fmaxf(legSwingL, legSwingR);
 
 	// scale bottom ellipse outward when legs apart
-	float expand = 1.0f + 0.015f * swingMax;  // tweak multiplier for stronger flare
-	aBot *= expand;
-	bBot *= expand;
+	float squatExpand = 1.0f + 0.01f * (gThighDegTorso / 80.0f);
+	aBot *= squatExpand ;
+	bBot *= squatExpand *1.45;
 
 	// draw sarong frustum
+	glPushMatrix();
+	glScalef(1.2, 1, 1);
 	drawEllipticFrustum(yTop, yBot, aTop, bTop, aBot, bBot, 72);
+	glPopMatrix();
+
+	if (gSquatDegTorso >= 20 && gThighDegTorso >= 80 && gSquatThigh >= 1.6)
+	{
+		glPushMatrix();
+		glTranslatef(0, -gSquatThigh*1.65, -gSquatThigh *1.95 );
+		glRotatef(180, 0, 0, 1);
+		glRotatef(-gThighDegTorso, 1, 0, 0);
+		glScalef(1, 0.5, 1.7);
+		drawEllipticFrustum(yTop, yBot, aTop *1.5, bTop, aBot *0.8, bBot *0.8, 72);
+		glPopMatrix();
+	}
 }
 
 
@@ -4853,6 +4964,8 @@ void poseidon() {
 
 	glPushMatrix();
 	glRotatef(rp, 0, 1, 0.0);
+	glTranslatef(0, gJumpTime, 0);   // lift character up
+
 	glTranslatef(txwhole, tywhole, tzwhole);
 
 	switch (change) {
@@ -4870,7 +4983,9 @@ void poseidon() {
 		break;
 	}
 	glPushMatrix();
+	glTranslatef(0, -gSquatThigh,-gSquatThigh);
 	glRotatef(gBowAngle, 1, 0, 0);   // rotate forward around X
+	glRotatef(gSquatDegTorso, 1, 0, 0);
 
 	head();
 
