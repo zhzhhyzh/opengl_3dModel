@@ -59,7 +59,7 @@ float rotateX = 0;
 float rotateY = 0;
 int textureChange = 1;
 bool changing = false;
-float OLeft = -10.0, ORight = 10.0, ODown = -10.0, OUp = 10.0, ONear = -10.0, OFar = 10.0;
+float OLeft = -15.0, ORight = 15.0, ODown = -15.0, OUp = 15.0, ONear = -15.0, OFar = 15.0;
 float xPosition = 0.0f, yPosition = 0.0f, zPosition = 0.05f;
 
 //Left leg
@@ -127,11 +127,36 @@ static float breathPhase = 0.0f;  // radians
 float breathFreq = 0.5f;          // Hz (base breathing rate)
 float breathAmp = 0.02f;          // amplitude of chest expansion
 
+float gWristSpin = 0.0f;
+bool  gWristSpinActive = false;
+float gElbowBend = 0.0f;
+bool gElbowBent = false;
+bool gElbowAnimating = false;
+float gShoulderOpen = 0.0f;
+bool gShoulderAnimating = false;
+bool gShoulderOpened = false;   // state: false = normal, true = opened outward
+float gHeadAngle = 0.0f;
+bool gHeadAnimating = false;
+bool gHeadHorizontal = true;  // toggle: true = horizontal, false = vertical
+
+int gHeadShakeCount = 0;      // count how many swings
+int gHeadDirection = 1;       // 1 or -1 for alternating
+
+float gMarchAngle = 0.0f;       // swing angle of legs
+bool gMarching = false;
+float gMarchTime = 0.0f;        // time counter
+
+float gBowAngle = 0.0f;
+bool gBowAnimating = false;
+bool gBowed = false;   // false = standing, true = bowed
+
 static DWORD gLastTick = 0;      // for dt in action()
 
 // --- Off-hand (left) grip target, world space ---
 static bool  gOffhandActive = false;
 static float gOffhandTargetW[3] = { 0,0,0 };
+
+
 
 
 // column-major OpenGL helpers
@@ -414,7 +439,12 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			gKeyD = false;
 			Audio::close(L"walk");
 		}
-		else if (wParam == 'X') { if (gWpnKeyXDown && gWpnState == WPN_X_CHARGING) { gWpnState = WPN_X_SWEEP; gWpnTimer = 0; } gWpnKeyXDown = false; }
+		else if (wParam == 'X') { if (gWpnKeyXDown && gWpnState == WPN_X_CHARGING) { gWpnState = WPN_X_SWEEP; gWpnTimer = 0; } gWpnKeyXDown = false; Audio::playOnce(L"fxX", MP3_ACTION_X);
+		}
+		
+		else if (wParam == VK_LEFT){
+		
+		}
 
 		// if no movement keys are down, stop walking
 		if (!(gKeyW || gKeyA || gKeyS || gKeyD)) {
@@ -462,6 +492,10 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			walkHipPitchL = walkHipPitchR = 0.0f;
 			walkKneeFlexL = walkKneeFlexR = 0.0f;
 			walkAnkleRollL = walkAnkleRollR = 0.0f;
+
+			//Number pad animation
+			gElbowBend = 0;
+			gShoulderOpen				= 0;
 
 		}
 
@@ -558,9 +592,13 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		}
 	
 		else if (wParam == 'V') showModelLines = !showModelLines;
-		else if (wParam == 'B') { if (gWpnState == WPN_ON_BACK) { gWpnState = WPN_EQUIP_ANIM; gWpnTimer = 0; } else { gWpnState = WPN_ON_BACK; gWaterTrail.clear(); } }
+		else if (wParam == 'B') { if (gWpnState == WPN_ON_BACK) { gWpnState = WPN_EQUIP_ANIM; gWpnTimer = 0;gElbowBend = 0;gShoulderOpen
+			= 0;
+ }
+		else { gWpnState = WPN_ON_BACK; gWaterTrail.clear(); }
+ }
 		else if (wParam == 'Z') {
-			if (gWpnState == WPN_IN_HAND) {
+			if (gWpnState == WPN_IN_HAND ) {
 				gWpnState = WPN_Z_COMBO;
 				gWpnTimer = 0.0f;
 				zJumpStartY = yPosition;   // <-- record current Y for the jump arc
@@ -570,12 +608,65 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			}
 		}
 
-		else if (wParam == 'X') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_X_CHARGING; gWpnTimer = 0; gWpnCharge = 0; gWpnKeyXDown = true;  Audio::playOnce(L"fxX", MP3_ACTION_X);
+		else if (wParam == 'X') { if (gWpnState == WPN_IN_HAND && !gWalking) { gWpnState = WPN_X_CHARGING; gWpnTimer = 0; gWpnCharge = 0; gWpnKeyXDown = true;  
  } }
 
 
 		else if (wParam == 'C') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_C_WATERSKIM; gWpnTimer = 0; gWaterTrail.clear();     Audio::playOnce(L"fxC", MP3_ACTION_C);
 } }
+		else if (wParam == VK_LEFT) {
+	
+	}
+		else if (wParam == VK_UP) {}
+		else if (wParam == VK_DOWN) {}
+		else if (wParam == VK_RIGHT) {}
+		else if (wParam == '1') {
+			if (gWpnState != WPN_IN_HAND) {
+				gWristSpin = 0.0f;
+				gWristSpinActive = true;
+			}
+			}
+		else if (wParam == '2') {
+				if (gWpnState != WPN_IN_HAND) {
+					if (!gElbowAnimating) {   // only trigger if not already animating
+						gElbowAnimating = true;
+						gElbowBent = !gElbowBent;   // toggle state
+					}
+				}
+				}
+		else if (wParam == '3') {
+			if (gWpnState != WPN_IN_HAND) {
+				if (!gShoulderAnimating) {
+					gShoulderAnimating = true;
+					gShoulderOpened = !gShoulderOpened;  // toggle state
+				}
+			}
+			}
+
+		else if (wParam == '4') {
+			if (!gHeadAnimating) {
+				gHeadAnimating = true;
+				gHeadAngle = 0.0f;
+				gHeadShakeCount = 0;
+				gHeadDirection = 1;
+			}
+			}
+		else if (wParam == '5') {
+			gMarching = true;
+			gMarchAngle = 0.0f;
+			gMarchTime = 0.0f;
+			}
+		else if (wParam == '6') {
+				if (gWpnState != WPN_IN_HAND) {
+					gElbowBend = 0;
+					gShoulderOpen						= 0;
+					if (!gBowAnimating) {
+						gBowAnimating = true;
+						gBowed = !gBowed;   // toggle state
+					}
+				}
+				}
+
 
 		
 		break;
@@ -997,70 +1088,90 @@ static void computeActionPose()
 	actHipPitchR = actHipPitchL = 0;
 	actKneeFlexR = actKneeFlexL = 0;
 
-	// ===== Z : Raise -> Up thrust -> Down chop (0.75s)
 	if (gWpnState == WPN_Z_COMBO) {
 		float t = gWpnTimer;
 
-		const float tPrep = 0.18f, tRise = 0.28f, tHang = 0.98f, tFall = 0.30f;
+		const float tPrep = 0.18f, tRise = 0.28f, tHang = 0.20f, tFall = 0.30f;
 		float wPrep = clamp01(t / tPrep);
 		float wRise = clamp01((t - tPrep) / tRise);
 		float wHang = clamp01((t - tPrep - tRise) / tHang);
 		float wFall = clamp01((t - tPrep - tRise - tHang) / tFall);
 
-		// --- Crouch anticipation ---
+		// --- 1. Prep (straighten, set grips) ---
+		if (t < 0.1f) {
+			actHipPitchR = actHipPitchL = 0.0f;
+			actKneeFlexR = actKneeFlexL = 0.0f;
+			walkHipPitchL = walkHipPitchR = 0.0f;
+			walkKneeFlexL = walkKneeFlexR = 0.0f;
+			walkAnkleRollL = walkAnkleRollR = 0.0f;
+			actHipPitchL = actHipPitchR = 0.0f;
+			actKneeFlexL = actKneeFlexR = 0.0f;
+			actRShoulderPitch = +12.0f;  // low grip
+			actLShoulderPitch = +18.0f;  // higher grip
+		}
+
+		// --- 2. Crouch anticipation ---
 		if (t < tPrep) {
 			actTorsoPitch += lerp(0, +10, wPrep);
-			actHipPitchL += lerp(0, +6, wPrep);
+			actHipPitchL += lerp(0, +8, wPrep);
 			actHipPitchR += lerp(0, +6, wPrep);
-			actKneeFlexL += lerp(0, +14, wPrep);
+			actKneeFlexL += lerp(0, +16, wPrep);
 			actKneeFlexR += lerp(0, +14, wPrep);
 
-			actRShoulderPitch += lerp(0, +18, wPrep);   // wind‑up
-			actRElbowFlex += lerp(0, +10, wPrep);
-			actLShoulderPitch += -lerp(0, 18, wPrep);
+			// both hands preload weapon downward
+			actRShoulderPitch += lerp(+12, +28, wPrep);
+			actRElbowFlex += lerp(0, +12, wPrep);
+			actLShoulderPitch += lerp(+18, +32, wPrep);
+			actLElbowFlex += lerp(0, +12, wPrep);
 			return;
 		}
 
-		// --- Ascend: spear rises to ear height ---
+		// --- 3. Rise / Jump ---
 		if (t < tPrep + tRise) {
 			float u = (t - tPrep) / tRise;
-			// stronger raise
-			actRShoulderPitch += lerp(+18, +620, u);   // was ~40
-			actRElbowFlex += lerp(+10, +16, u);
 
-			//// Left arm mirrors to keep the two‑hand grip
-			//actLShoulderPitch += lerp(-12, +540, u);
-			//actLElbowFlex += lerp(+8, +14, u);
+			actTorsoPitch += lerp(+10, -6, u);   // straighten torso
+			actHipPitchL += lerp(+8, -2, u);
+			actHipPitchR += lerp(+6, -2, u);
+			actKneeFlexL += lerp(+16, -4, u);   // push off ground
+			actKneeFlexR += lerp(+14, -4, u);
+
+			// both arms lift trident overhead
+			actRShoulderPitch += lerp(+28, +540, u);
+			actRElbowFlex += lerp(+12, +22, u);
+			actLShoulderPitch += lerp(+32, +540, u);
+			actLElbowFlex += lerp(+12, +22, u);
 			return;
 		}
-		// --- Hang (by the ear) ---
+
+		// --- 4. Hang (weapon fully up, just before chop) ---
 		if (t < tPrep + tRise + tHang) {
-			actRShoulderPitch -= 62.0f;
-			actRElbowFlex -= 16.0f;
-			actLShoulderPitch -= 27.0f;
-			actLElbowFlex -= 7.0f;
+			actTorsoPitch += -6.0f;
+			actRShoulderPitch += +540.0f;
+			actLShoulderPitch += +540.0f;
 			return;
 		}
-		// --- Fall: big chop ---
+
+		// --- 5. Chop down / Landing ---
 		{
 			float u = (t - (tPrep + tRise + tHang)) / tFall;
 			float s = easeInOut(u);
-			actRShoulderPitch -= lerp(+20, +110, s);   // deeper chop
-			actRElbowFlex += lerp(8, +28, s);
-			actLShoulderPitch += lerp(+12, +95, s);   // off‑hand follows through
-			actLElbowFlex += lerp(6, +26, s);
-			// torso & legs unchanged (your shock ring still fires near landing)
-			actTorsoPitch += lerp(4, +20, s);  // lean into the slam
-			actHipPitchL += lerp(0, +8, s);
-			actHipPitchR += lerp(0, +6, s);
-			actKneeFlexL += lerp(12, +22, s);  // landing bend
-			actKneeFlexR += lerp(12, +18, s);
+
+			actTorsoPitch += lerp(-6, +26, s);  // lean into chop
+			actHipPitchL += lerp(-2, +8, s);
+			actHipPitchR += lerp(-2, +6, s);
+			actKneeFlexL += lerp(-4, +18, s);  // land bend
+			actKneeFlexR += lerp(-4, +18, s);
+
+			// left hand leads, right follows
+			actLShoulderPitch += lerp(+540, +640, s);
+			actLElbowFlex += lerp(+22, +32, s);
+			actRShoulderPitch += lerp(+540, +620, s);
+			actRElbowFlex += lerp(+22, +30, s);
 			return;
 		}
-
-
-		
 	}
+
 
 	// ===== X : Charge (hold) then Sweep (release)
 	if (gWpnState == WPN_X_CHARGING) {
@@ -1091,8 +1202,8 @@ static void computeActionPose()
 		//actTorsoPitch += +6.0f * (1.0f - s);
 
 		// Right arm sweep (mirrored yaw vs before)
-		actRShoulderYaw -= lerp(+400, +20, s);   // start wide right, finish closer
-		actRShoulderPitch += lerp(-50, -20, s);  // same pitch arc but reversed order
+		actRShoulderYaw -= lerp(-400, +20, s);   // start wide right, finish closer
+		actRShoulderPitch += lerp(50, 20, s);  // same pitch arc but reversed order
 		actRElbowFlex += lerp(-4, 10, s);     // flex recovers at end
 
 		// Left arm balances — mirror pitch response
@@ -1114,8 +1225,8 @@ static void computeActionPose()
 			float u = easeInOut(t / tRaise);
 			// raise both hands overhead, slight lean back
 			//actTorsoPitch += lerp(0, -8, u);
-			actRShoulderPitch += lerp(0, -80, u);  // arms up
-			actLShoulderPitch += lerp(0, -30, u);
+			actRShoulderPitch += lerp(0, 80, u);  // arms up
+			actLShoulderPitch += lerp(0, 30, u);
 		
 			/*actHipPitchL += lerp(0, 6, u);
 			actHipPitchR += lerp(0, 6, u);
@@ -1125,8 +1236,8 @@ static void computeActionPose()
 		else {
 			// hold high while firing; add a little tremble
 			float s = sinf((t - tRaise) * 18.0f) * 3.0f;
-			actRShoulderPitch += -80.0f;
-			actLShoulderPitch += -30.0f;
+			actRShoulderPitch += 80.0f;
+			actLShoulderPitch += 30.0f;
 			
 			//actTorsoPitch += -6.0f;
 		}
@@ -1162,42 +1273,65 @@ static void renderBullets() {
 static void updateWeapon(float dt) {
 	// Equip pop
 	if (gWpnState == WPN_EQUIP_ANIM) { gWpnTimer += dt; if (gWpnTimer > 0.20f) { gWpnState = WPN_IN_HAND; gWpnTimer = 0; } return; }
-	// ===== Z : Jump → Up‑thrust → Down‑slam =====
+	// ===== Z : Jump → Up-thrust → Down-slam =====
 	if (gWpnState == WPN_Z_COMBO) {
 		gWpnTimer += dt;
 
-		// timeline
-		const float tPrep = 0.18f;  // crouch
-		const float tRise = 0.28f;  // jump up
-		const float tHang = 0.18f;  // short hang
-		const float tFall = 0.30f;  // fast drop + slam
+		const float tPrep = 0.18f;   // crouch
+		const float tRise = 0.28f;   // jump
+		const float tHang = 0.18f;   // apex
+		const float tFall = 0.30f;   // slam
 		const float T = tPrep + tRise + tHang + tFall;
 
 		float t = gWpnTimer;
 		float Y = zJumpStartY;
 
+		// === Motion profile ===
 		if (t < tPrep) {
-			// crouch (dip a bit)
-			Y = zJumpStartY - lerp(0.0f, 0.22f, t / tPrep);
+			// crouch (dip + bend knees)
+			float u = t / tPrep;
+			Y = zJumpStartY - lerp(0.0f, 0.22f, u);
+			actKneeFlexL = actKneeFlexR = lerp(0, 18, u);
+			actHipPitchL = actHipPitchR = lerp(0, +8, u);
+			actTorsoPitch = lerp(0, +12, u);
+			// left hand is forward (higher on shaft)
+			actLShoulderPitch += 10.0f;
+			actLElbowFlex += 6.0f;
+
+			// right hand lower (back grip)
+			actRShoulderPitch -= 5.0f;
+			actRElbowFlex += 4.0f;
+
 		}
 		else if (t < tPrep + tRise) {
-			// rise (accelerating up)
-			float u = (t - tPrep) / tRise;    // 0..1
+			// rise (extend legs, lift trident)
+			float u = (t - tPrep) / tRise;
 			Y = zJumpStartY - 0.22f + lerp(0.0f, 1.85f, u * u);
+			actKneeFlexL = actKneeFlexR = lerp(18, 0, u);
+			actHipPitchL = actHipPitchR = lerp(+8, -2, u);
+			actTorsoPitch = lerp(+12, -4, u);
+			actRShoulderPitch += lerp(+28, +110, u);   // right hand lower grip
+			actLShoulderPitch += lerp(+38, +120, u);   // left hand slightly higher grip
+
 		}
 		else if (t < tPrep + tRise + tHang) {
-			// brief apex
+			// brief apex (hold overhead)
 			Y = zJumpStartY + 1.63f;
+			actTorsoPitch = -6.0f;
+			actRShoulderPitch = actLShoulderPitch = +540.0f;
 		}
 		else if (t < T) {
-			// fall quickly
-			float u = (t - (tPrep + tRise + tHang)) / tFall;   // 0..1
+			// fall (slam down)
+			float u = (t - (tPrep + tRise + tHang)) / tFall;
 			Y = zJumpStartY + 1.63f - lerp(0.0f, 1.75f, u * u);
 
-			// near the end → spawn impact once
+			actTorsoPitch = lerp(-6, +26, u);
+			actKneeFlexL = actKneeFlexR = lerp(0, +20, u);   // absorb landing
+			actRShoulderPitch = actLShoulderPitch = lerp(+540, +640, u);
+
 			if (u > 0.92f && !zImpactSpawned) {
 				zImpactSpawned = true;
-				gImpactTimer = 0.28f;    // show shock ring
+				gImpactTimer = 0.28f; // shockwave
 			}
 		}
 		else {
@@ -1206,14 +1340,16 @@ static void updateWeapon(float dt) {
 			gWpnState = WPN_IN_HAND;
 			gWpnTimer = 0.0f;
 			zImpactSpawned = false;
-			computeActionPose();         // clears to idle pose
+			computeActionPose(); // reset to idle
 			return;
 		}
 
+		// update Y position and recompute full pose
 		yPosition = Y;
-		computeActionPose();             // produce limb/torso pose for this frame
+		computeActionPose();
 		return;
 	}
+
 
 	// X
 	if (gWpnState == WPN_X_CHARGING) { gWpnTimer += dt; gWpnCharge = min(1.0f, gWpnCharge + dt * 1.2f); return; }
@@ -1515,6 +1651,103 @@ void action() {
 		Audio::playLoop(L"walk", MP3_WALK);
 	}
 
+	if (gWristSpinActive) {
+		gWristSpin += 3.0f;   // degrees per frame (adjust speed)
+		if (gWristSpin >= 360.0f) {
+			gWristSpin = 0.0f;
+			gWristSpinActive = false; // stop after one round
+		}
+	}
+
+	if (gElbowAnimating) {
+		if (gElbowBent) {
+			// moving toward bent inward (target 90°)
+			gElbowBend += 2.0f;
+			if (gElbowBend >= 90.0f) {
+				gElbowBend = 90.0f;
+				gElbowAnimating = false;
+			}
+		}
+		else {
+			// moving back down (target 0°)
+			gElbowBend -= 2.0f;
+			if (gElbowBend <= 0.0f) {
+				gElbowBend = 0.0f;
+				gElbowAnimating = false;
+			}
+		}
+	}
+
+	if (gShoulderAnimating) {
+		if (gShoulderOpened) {
+			// move outward (target 60°)
+			gShoulderOpen += 2.0f;
+			if (gShoulderOpen >= 90.0f) {
+				gShoulderOpen = 90.0f;
+				gShoulderAnimating = false;
+			}
+		}
+		else {
+			// move back down (target 0°)
+			gShoulderOpen -= 2.0f;
+			if (gShoulderOpen <= 0.0f) {
+				gShoulderOpen = 0.0f;
+				gShoulderAnimating = false;
+			}
+		}
+	}
+	if (gHeadAnimating) {
+		gHeadAngle += gHeadDirection * 2.5f;   // speed
+
+		if (gHeadAngle >= 20.0f) {    // max swing angle
+			gHeadAngle = 20.0f;
+			gHeadDirection = -1;      // reverse
+			gHeadShakeCount++;
+		}
+		else if (gHeadAngle <= -20.0f) {
+			gHeadAngle = -20.0f;
+			gHeadDirection = 1;       // reverse
+			gHeadShakeCount++;
+		}
+
+		if (gHeadShakeCount >= 4) {   // 2 swings = 4 reversals
+			gHeadAnimating = false;
+			gHeadAngle = 0.0f;        // reset to center
+			gHeadHorizontal = !gHeadHorizontal; // toggle for next press
+		}
+	}
+
+	if (gMarching) {
+		gMarchTime ++;
+
+		// marching swing speed (adjust as needed)
+		gMarchAngle = 20.0f * sinf(gMarchTime *0.075f);
+		// 6.0f → about 1 cycle per second (left–right)
+
+		if (gMarchTime >180) {   // stop after 3 seconds
+			gMarching = false;
+			gMarchAngle = 0.0f;
+		}
+	}
+
+	if (gBowAnimating) {
+		if (gBowed) {
+			// bowing down
+			gBowAngle += 2.0f;
+			if (gBowAngle >= 70.0f) {
+				gBowAngle = 70.0f;
+				gBowAnimating = false;
+			}
+		}
+		else {
+			// standing back up
+			gBowAngle -= 2.0f;
+			if (gBowAngle <= 0.0f) {
+				gBowAngle = 0.0f;
+				gBowAnimating = false;
+			}
+		}
+	}
 
 
 	// === BREATHING FREQUENCY CONTROL ===
@@ -2525,12 +2758,17 @@ static void drawTridentHeldPose() {
 	glTranslatef(0.0f, -0.28f, 0.0f);
 	// lay along forward (+Z) from the hand
 	glRotatef(-90.0f, 1, 0, 0);
+	glRotatef(180.0f, 0,1, 0);
 	glRotatef(+8.0f, 0, 0, 1);
 
 	// === add motion by state ===
 	if (gWpnState == WPN_Z_COMBO) {
 		float t = gWpnTimer;
 		const float tPrep = 0.18f, tRise = 0.28f, tHang = 0.18f, tFall = 0.30f;
+		// lay along forward (+Z) from the hand
+		glRotatef(-90.0f, 1, 0, 0);
+		glRotatef(+8.0f, 0, 0, 1);
+		glRotatef(-45.0f, 0, 0, 1);   // NEW: tilt shaft for two-hand grip
 
 		if (t < tPrep) {
 			glRotatef(lerp(0, +22, t / tPrep), 1, 0, 0);       // preload
@@ -2578,14 +2816,16 @@ static void drawTridentHeldPose() {
 	Gfx::norm3(gMuzzleDirW[0], gMuzzleDirW[1], gMuzzleDirW[2]);
 
 
-	float leftGripLocal[3] = { 0.0f, 0.0f, 1.15f };  // along local +Z from the right-hand grip
+	float rightGripLocal[3] = { 0.0f, 0.0f, 0.60f };   // lower grip
+	float leftGripLocal[3] = { 0.0f, 0.0f, 1.15f };   // upper grip (forward)
+
+	mulPointM4(M, rightGripLocal, gMuzzleW);   // still used for effects
 	mulPointM4(M, leftGripLocal, gOffhandTargetW);
 	gOffhandActive = true;
 
-	// draw the actual weapon
-	drawTridentGeo(/*lengthScale*/1.15f);
 
-	drawTridentGeo(/*lengthScale*/1.15f);
+	// draw the actual weapon
+		drawTridentGeo(/*lengthScale*/1.15f);
 	glPopMatrix();
 }
 
@@ -2730,7 +2970,7 @@ static void drawHandNatural(int side, bool grip /* true=fist */)
 	// 3) Fingers (index..pinky spaced along Z; realistic lengths)
 	{
 		const float zStart = -PALM_W * 0.45f;
-		const float zStep = PALM_W * 0.30f;
+		const float zStep = PALM_W * 0.3f;
 
 		// index, middle, ring, pinky
 		const float lenScale[4] = {
@@ -2775,7 +3015,7 @@ static void drawHandNatural(int side, bool grip /* true=fist */)
 		// move the carpometacarpal base toward palm center & forward
 		glTranslatef(side * (PALM_T * 0.55f),   // out from the palm side
 			-PALM_H * 0.06f,          // a bit above knuckle line
-			PALM_W * 0.12f);         // forward toward fingers
+			PALM_W * -0.45f);         // forward toward fingers
 
 		// stronger opposition so the thumb wraps across the fingers
 		glRotatef(side * -22.0f, 0, 0, 1);     // slight abduction from palm
@@ -2790,7 +3030,7 @@ static void drawHandNatural(int side, bool grip /* true=fist */)
 	}
 	else {
 		// natural resting thumb
-		glTranslatef(side * (PALM_T * 0.65f - 0.20f), -PALM_H * 0.10f, PALM_W * 0.25f);
+		glTranslatef(side * (PALM_T * 0.65f - 0.20f), -PALM_H * 0.10f, PALM_W * -0.25f);
 		glRotatef(side * -35.0f, 0, 0, 1);
 		glRotatef(side * -55.0f, 0, 1, 0);
 		glRotatef(-12.0f, 1, 0, 0);
@@ -2939,6 +3179,7 @@ static void ellipseCapTri(int slices, float y, float rx, float rz, int dir)
 
 
 // --- Full arm (shoulder to wrist). side = -1 left, +1 right
+// --- Full arm (shoulder to wrist). side = -1 left, +1 right
 static void drawArmDown(int side)
 {
 	const EllipseProfile* T; int TN; float BODY_H;
@@ -2957,12 +3198,11 @@ static void drawArmDown(int side)
 	const float xS = side * (a * 0.95f);
 	const float zS = b * 0.25f;
 
-	// proportions (tuned to your screenshots)
+	// proportions
 	const int   SLICES = 20;
 	const float UPPER_LEN = 1.40f;  // shoulder -> elbow
 	const float FORE_LEN = 2.35f;  // elbow -> wrist
 
-	// radius sets
 	const float SHO_RX = 0.55f, SHO_RZ = 0.50f;
 	const float HUM_RX0 = 0.42f, HUM_RZ0 = 0.36f;
 	const float HUM_RX1 = 0.34f, HUM_RZ1 = 0.30f;
@@ -2977,7 +3217,6 @@ static void drawArmDown(int side)
 	const float ELB_SEG = 0.30f;
 	const float WRIST_SEG = 0.22f;
 
-	// pronation twist across the forearm
 	const float TWIST_FORE = 8.0f * (float)side;
 
 	// base pose
@@ -2988,22 +3227,21 @@ static void drawArmDown(int side)
 	glTranslatef(xS, yS, zS);
 	glRotatef(ARM_YAW * (float)side, 0, 1, 0);
 
-	// --- Shoulder swing (running-like when walking) ---
+	// --- Shoulder swing (walking) ---
 	float armSwing = 0.0f;
 	if (gWalking) {
-		// exaggerate like running
-		float gRunArmAmpDeg = 55.0f; // strong swing
+		float gRunArmAmpDeg = 55.0f;
 		armSwing = sinf(gWalkPhase + (side > 0 ? 0.0f : 3.14159f)) * gRunArmAmpDeg;
 	}
 	glRotatef(ARM_PITCH + armSwing, 1, 0, 0);
 
-	// ===== additive action shoulder pose =====
-	if (side > 0) { // right
+	// ===== Additive shoulder pose =====
+	if (side > 0) { // right arm
 		glRotatef(actRShoulderYaw, 0, 1, 0);
 		glRotatef(actRShoulderPitch, 1, 0, 0);
 		glRotatef(actRShoulderRoll, 0, 0, 1);
 	}
-	else {        // left
+	else {        // left arm
 		glRotatef(actLShoulderYaw, 0, 1, 0);
 		glRotatef(actLShoulderPitch, 1, 0, 0);
 		glRotatef(actLShoulderRoll, 0, 0, 1);
@@ -3022,7 +3260,14 @@ static void drawArmDown(int side)
 	glPopMatrix();
 
 	glTranslatef(0, -SHO_CAP, 0);
+	if (side > 0) {
+		glRotatef(+gShoulderOpen, 0, 0, 1);   // outward from torso
 
+	}
+	else {
+		glRotatef(-gShoulderOpen, 0, 0, 1);   // outward from torso
+
+	}
 	// ---------- UPPER ARM ----------
 	tubeSectionQuads(SLICES, UPPER_LEN * 0.45f,
 		HUM_RX0 * 1.05f, HUM_RZ0 * 1.08f,
@@ -3033,6 +3278,8 @@ static void drawArmDown(int side)
 		HUM_RX1, HUM_RZ1,
 		HUM_RX2 * 0.95f, HUM_RZ2 * 0.92f, 0, 0);
 	glTranslatef(0, -(UPPER_LEN * 0.55f), 0);
+
+	glRotatef(gElbowBend, 1, 0, 0);   // bend inward around local X
 
 	// ---------- ELBOW ----------
 	tubeSectionQuads(SLICES, ELB_SEG * 0.6f,
@@ -3046,9 +3293,9 @@ static void drawArmDown(int side)
 	glTranslatef(0, -(ELB_SEG * 0.4f), 0);
 
 	// ---------- FOREARM ----------
-	// Add elbow flex when walking (run-like)
-	float elbowFlex = (gWalking ? 75.0f : 10.0f); // 75° bend if walking (run style)
-	glRotatef(elbowFlex + (side > 0 ? actRElbowFlex : actLElbowFlex), 1, 0, 0);
+	float baseElbowFlex = (gWalking ? 75.0f : 10.0f);
+	float elbowFlex = baseElbowFlex + (side > 0 ? actRElbowFlex : actLElbowFlex);
+	glRotatef(elbowFlex, 1, 0, 0);
 
 	tubeSectionQuads(SLICES, FORE_LEN * 0.58f,
 		PRO_RX0, PRO_RZ0,
@@ -3071,18 +3318,19 @@ static void drawArmDown(int side)
 		TWIST_FORE, TWIST_FORE);
 	glTranslatef(0, -WRIST_SEG, 0);
 
-	float wristFlex = -10.0f;
-	float wristRoll = 8.0f * side;
-	glRotatef(wristFlex, 1, 0, 0);
-	glRotatef(wristRoll, 0, 0, 1);
+	// Use animated wrist angles
 
-	bool grip = (gWpnState == WPN_IN_HAND ||
+	// ---------- HAND ----------
+	bool grip = (    
+		gWpnState == WPN_IN_HAND ||
 		gWpnState == WPN_Z_COMBO ||
 		gWpnState == WPN_X_CHARGING ||
 		gWpnState == WPN_X_SWEEP ||
 		gWpnState == WPN_C_WATERSKIM);
 
 	if (side > 0) {
+		if(gWristSpinActive)glRotatef(+gWristSpin, 0, 1, 0);   // anticlockwise
+
 		drawHandNatural(side, grip);
 
 		if (grip) {
@@ -3095,6 +3343,8 @@ static void drawArmDown(int side)
 		}
 	}
 	else {
+		if (gWristSpinActive)glRotatef(-gWristSpin, 0, 1, 0);   // clockwise
+
 		drawHandNatural(-1, grip);
 
 		if (grip) {
@@ -3112,8 +3362,6 @@ static void drawArmDown(int side)
 
 
 	if (side < 0) gOffhandActive = false;
-
-
 	glPopMatrix();
 }
 
@@ -3403,7 +3651,7 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	const float THIGH_LEN = 1.60f;
 	const float SHIN_LEN = 4.60f;
 	const float HIP_R = 0.62f;
-	const float THIGH_R0 = 0.62f, THIGH_R1 = 0.00f;
+	const float THIGH_R0 = 0.82f, THIGH_R1 = 0.00f;
 	const float KNEE_R = 0.40f;
 	const float CALF_R0 = 0.44f, CALF_R1 = 0.30f;
 	const float ANKLE_R = 0.24f;
@@ -3431,6 +3679,10 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 
 	// thigh
 	drawCapsuleDownY(THIGH_R0, THIGH_R1, THIGH_LEN);
+	if (side > 0) {
+		glRotatef(+gMarchAngle, 1, 0, 0);   // forward/back swing
+
+	}else glRotatef(-gMarchAngle, 1, 0, 0);   // opposite swing
 
 	// --- knee joint sphere ---
 	glTranslatef(0, -THIGH_LEN, -0.5);
@@ -4167,6 +4419,13 @@ void head(){
 
 
 	glPushMatrix();
+	if (gHeadHorizontal) {
+		glRotatef(gHeadAngle, 0, 1, 0);   // horizontal (yaw, left–right)
+	}
+	else {
+		glRotatef(gHeadAngle, 1, 0, 0);   // vertical (pitch, up–down)
+	}
+
 	// anchor at torso neck hole
 	glTranslatef(0.0f, neckY - 7.08f, 0.0f);
 	glTranslatef(0.0f, NECK_L + SKULL_RY * 0.28f, 0.0f);
@@ -4610,10 +4869,16 @@ void poseidon() {
 		textureArr[3] = loadTexture("d.bmp");
 		break;
 	}
+	glPushMatrix();
+	glRotatef(gBowAngle, 1, 0, 0);   // rotate forward around X
+
 	head();
+
+
 	body();
 
 	glPushMatrix();
+	glTranslatef(0, 0, 0.5);
 	glRotated(180, 0, 1, 0);
 	leftarm();
 	rightarm();
@@ -4625,10 +4890,13 @@ void poseidon() {
 	// Weapon on back when not equipped
 	if (gWpnState == WPN_ON_BACK || gWpnState == WPN_EQUIP_ANIM)
 		drawTridentOnBack();
-	drawSarongHuggingTorso(gPelvisY);
 
+	glPopMatrix();
+
+	drawSarongHuggingTorso(gPelvisY);
 	glPushMatrix();
 	glTranslatef(0, -4, 0);
+
 	leftleg();
 	rightleg();
 	glPopMatrix();
