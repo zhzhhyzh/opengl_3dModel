@@ -5064,13 +5064,7 @@ void poseidon() {
 
 	projection();
 
-	// in poseidon(), before drawing your model (after clears/projection)
-	if (gWireframeMode) {
-		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);  // wireframe
-	}
-	else {
-		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  // normal fill
-	}
+	
 	glDisable(GL_LINE_SMOOTH);                  
 	glDisable(GL_POLYGON_SMOOTH);
 
@@ -5262,7 +5256,13 @@ void poseidon() {
 	
 }
 void display()
-{
+{// in poseidon(), before drawing your model (after clears/projection)
+	if (gWireframeMode) {
+		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);  // wireframe
+	}
+	else {
+		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  // normal fill
+	}
 	//--------------------------------
 	//	OpenGL drawing
 	//--------------------------------
