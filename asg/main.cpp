@@ -521,6 +521,10 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
 			gBowed = gSquatted = false;
 
+			// Camera
+			 camPanX =camPanY = camRotY= camRotX = 0.0f;                   // for , and .
+			 nearPlane = 1.0f, farPlane = 200.0f;  // adjustable by [ and ]
+
 		}
 
 		else if (wParam == 'W') {
@@ -615,7 +619,10 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 				lightPos1[2] += light1MoveSpeed;
 		}
 
-		else if (wParam == 'V') showModelLines = !showModelLines;
+		else if (wParam == 'V') 
+			{
+				if (!gWireframeMode)showModelLines = !showModelLines;
+ }
 		else if (wParam == 'B') {
 			if (gWpnState == WPN_ON_BACK) {
 				gWpnState = WPN_EQUIP_ANIM; gWpnTimer = 0;gElbowBend = 0;gShoulderOpen
@@ -766,6 +773,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
 		else if (wParam == '0') {
 			gWireframeMode = !gWireframeMode;
+			showModelLines = false;
 
 		}
 
@@ -1543,7 +1551,7 @@ void initModels() {
 
 
 void drawOBJ() {
-	glBegin(GL_TRIANGLES);
+	glBegin(GL_TRIANGLE_FAN);
 	for (auto& v : objVertices) {
 		// Decide color based on Y position
 		if (v.z > 0)
@@ -1893,7 +1901,7 @@ void action() {
 			else {
 				gSquatDegTorso -= 1.0f; if (gSquatDegTorso < 0) gSquatDegTorso = 0;
 				gThighDegTorso -= 2.0f; if (gThighDegTorso < 0) gThighDegTorso = 0;
-				gSquatThigh -= 0.2f;if (gSquatThigh < 0) gSquatThigh = 0;
+				gSquatThigh -= 0.05f;if (gSquatThigh < 0) gSquatThigh = 0;
 
 				if (gSquatDegTorso <= 0 && gThighDegTorso <= 0 && gSquatThigh <= 0) gSquatAnimating = false;
 			}
@@ -1926,7 +1934,7 @@ void action() {
 		else {
 			gSquatDegTorso -= 1.0f; if (gSquatDegTorso < 0) gSquatDegTorso = 0;
 			gThighDegTorso -= 2.0f; if (gThighDegTorso < 0) gThighDegTorso = 0;
-			gSquatThigh -= 0.2f;if (gSquatThigh < 0) gSquatThigh = 0;
+			gSquatThigh -= 0.05f;if (gSquatThigh < 0) gSquatThigh = 0;
 
 			if (gSquatDegTorso <= 0 && gThighDegTorso <= 0 && gSquatThigh <= 0) gSquatAnimating = false;
 		}
@@ -2247,7 +2255,7 @@ void body() {
 // a = half-width (X), b = half-depth (Z)
 	EllipseProfile TORSO[] = {
 		{0.00f, 1.40f, 1.10f},  // lower hip
-		{0.12f, 1.60f, 1.15f},  // upper hip
+		{0, 1.40f, 1.05f},  // upper hip
 		{0.28f, 1.25f, 0.95f},  // waist in
 		{0.45f, 1.55f, 1.15f},  // lower ribs
 		{0.62f, 1.85f, 1.25f},  // chest
@@ -3462,6 +3470,7 @@ static void drawArmDown(int side)
 		HUM_RX1, HUM_RZ1,
 		HUM_RX2 * 0.95f, HUM_RZ2 * 0.92f, 0, 0);
 	glTranslatef(0, -(UPPER_LEN * 0.55f), 0);
+	drawSphere(0.3, 8,8);
 
 	glRotatef(gElbowBend, 1, 0, 0);   // bend inward around local X
 
@@ -3475,6 +3484,7 @@ static void drawArmDown(int side)
 		ELB_RX * 1.12f, ELB_RZ * 1.10f,
 		PRO_RX0, PRO_RZ0, 0, 0);
 	glTranslatef(0, -(ELB_SEG * 0.4f), 0);
+	drawSphere(0.3, 8, 8);
 
 	// ---------- FOREARM ----------
 	float baseElbowFlex = (gWalking ? 75.0f : 10.0f);
@@ -3835,7 +3845,7 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	const float THIGH_LEN = 1.60f;
 	const float SHIN_LEN = 4.60f;
 	const float HIP_R = 0.62f;
-	const float THIGH_R0 = 0.82f, THIGH_R1 = 0.2f;
+	const float THIGH_R0 = 0.82f, THIGH_R1 = 0.35f;
 	const float KNEE_R = 0.40f;
 	const float CALF_R0 = 0.44f, CALF_R1 = 0.30f;
 	const float ANKLE_R = 0.24f;
@@ -4016,7 +4026,7 @@ static void drawSarongHuggingTorso(float pelvisY)
 	drawEllipticFrustum(yTop, yBot, aTop, bTop, aBot, bBot, 72);
 	glPopMatrix();
 
-	if (gSquatted)
+	if (gSquatted )
 	{
 		glPushMatrix();
 		glTranslatef(0, -gSquatThigh * 1.65, -gSquatThigh * 1.95);
