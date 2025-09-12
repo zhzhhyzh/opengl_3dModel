@@ -173,6 +173,11 @@ static DWORD gLastTick = 0;      // for dt in action()
 static bool  gOffhandActive = false;
 static float gOffhandTargetW[3] = { 0,0,0 };
 
+//Camera view
+float camPanX = 0.0f, camPanY = 0.0f;   // for arrow keys
+float camRotY = 0.0f;                   // for , and .
+float nearPlane = 1.0f, farPlane = 200.0f;  // adjustable by [ and ]
+float camRotX = 0.0f;   // for ';' and '''
 
 
 
@@ -293,7 +298,7 @@ GLuint loadTexture(LPCSTR filename) {
 
 
 GLuint bgTex = 0;
-
+GLuint texSarong = 0;
 GLuint loadTextureBMP(const char* filename) {
 	GLuint texID;
 	HBITMAP hBMP; BITMAP BMP;
@@ -315,7 +320,7 @@ GLuint loadTextureBMP(const char* filename) {
 
 
 static void drawSkybox() {
-	
+
 
 	glDisable(GL_DEPTH_TEST);      // Background shouldn’t write depth
 	glDisable(GL_LIGHTING);
@@ -439,7 +444,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
 	case WM_KEYUP:
 	{
-		if (wParam == 'W') 
+		if (wParam == 'W')
 		{
 			gKeyW = false;
 			Audio::close(L"walk");
@@ -456,12 +461,13 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			gKeyD = false;
 			Audio::close(L"walk");
 		}
-		else if (wParam == 'X') { if (gWpnKeyXDown && gWpnState == WPN_X_CHARGING) { gWpnState = WPN_X_SWEEP; gWpnTimer = 0; } gWpnKeyXDown = false; Audio::playOnce(L"fxX", MP3_ACTION_X);
+		else if (wParam == 'X') {
+			if (gWpnKeyXDown && gWpnState == WPN_X_CHARGING) { gWpnState = WPN_X_SWEEP; gWpnTimer = 0; } gWpnKeyXDown = false; Audio::playOnce(L"fxX", MP3_ACTION_X);
 		}
-		
-		else if (wParam == VK_LEFT){
-		
-		}
+
+
+
+
 
 		// if no movement keys are down, stop walking
 		if (!(gKeyW || gKeyA || gKeyS || gKeyD)) {
@@ -511,8 +517,8 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			walkAnkleRollL = walkAnkleRollR = 0.0f;
 
 			//Number pad animation
-			gElbowBend = gShoulderOpen= gBowAngle=gSquatDegTorso=gSquatThigh=gThighDegTorso = 0;
-						
+			gElbowBend = gShoulderOpen = gBowAngle = gSquatDegTorso = gSquatThigh = gThighDegTorso = 0;
+
 			gBowed = gSquatted = false;
 
 		}
@@ -533,7 +539,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			gKeyS = true;
 			gHeadingDeg = 180.0f; rotateY = 180.0f; gWalking = true;
 		}
-	
+
 		else if (wParam == 'O')
 		{
 			isOrtho = true;
@@ -545,7 +551,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			tx = 0, ty = 0, ptx = 0, pty = 0, prx = 0, pry = 0;
 			zoom = -7;
 		}
-		
+
 
 		else if (wParam == 'T')              //move robot nearer to view
 		{
@@ -579,53 +585,56 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			isLightOn = !isLightOn;
 		}
 		else if (wParam == 'U') {
-			if(isLightOn && lightPos1[1] < OUp - light1MoveSpeed)
-			lightPos1[1] += light1MoveSpeed;
+			if (isLightOn && lightPos1[1] < OUp - light1MoveSpeed)
+				lightPos1[1] += light1MoveSpeed;
 		}
 		else if (wParam == 'J') {
 			if (isLightOn && lightPos1[1] > ODown + light1MoveSpeed)
 
-			lightPos1[1] -= light1MoveSpeed;
+				lightPos1[1] -= light1MoveSpeed;
 		}
 		else if (wParam == 'H') {
-			if (isLightOn && lightPos1[0] > OLeft+ light1MoveSpeed)
+			if (isLightOn && lightPos1[0] > OLeft + light1MoveSpeed)
 
 
-			lightPos1[0] -= light1MoveSpeed;
+				lightPos1[0] -= light1MoveSpeed;
 		}
 		else if (wParam == 'K') {
 			if (isLightOn && lightPos1[0] < ORight - light1MoveSpeed)
 
-			lightPos1[0] += light1MoveSpeed;
+				lightPos1[0] += light1MoveSpeed;
 		}
 		else if (wParam == 'Y') {
 			if (isLightOn && lightPos1[2] > ONear + light1MoveSpeed)
 
-			lightPos1[2] -= light1MoveSpeed;
+				lightPos1[2] -= light1MoveSpeed;
 		}
 		else if (wParam == 'I') {
-			if (isLightOn && lightPos1[2]<OFar - light1MoveSpeed)
+			if (isLightOn && lightPos1[2] < OFar - light1MoveSpeed)
 
-			lightPos1[2] += light1MoveSpeed;
+				lightPos1[2] += light1MoveSpeed;
 		}
-	
-		else if (wParam == 'V') showModelLines = !showModelLines;
-		else if (wParam == 'B') { if (gWpnState == WPN_ON_BACK) { gWpnState = WPN_EQUIP_ANIM; gWpnTimer = 0;gElbowBend = 0;gShoulderOpen
-			= 0;gSquatAnimating = true;gSquatted = false;
 
-			walkHipPitchL = 
-			walkHipPitchR = 
-			walkKneeFlexL =
-			walkKneeFlexR = 
-			walkAnkleRollL = 
-			walkAnkleRollR = 
-			walkShoulderSwingL = 
-			walkShoulderSwingR =0;
- }
-		else { gWpnState = WPN_ON_BACK; gWaterTrail.clear(); gElbowBend = 0;gShoulderOpen
-			= 0;gSquatAnimating = true;gSquatted = false;
+		else if (wParam == 'V') showModelLines = !showModelLines;
+		else if (wParam == 'B') {
+			if (gWpnState == WPN_ON_BACK) {
+				gWpnState = WPN_EQUIP_ANIM; gWpnTimer = 0;gElbowBend = 0;gShoulderOpen
+					= 0;gSquatAnimating = true;gSquatted = false;
+
+				walkHipPitchL =
+					walkHipPitchR =
+					walkKneeFlexL =
+					walkKneeFlexR =
+					walkAnkleRollL =
+					walkAnkleRollR =
+					walkShoulderSwingL =
+					walkShoulderSwingR = 0;
 			}
- }
+			else {
+				gWpnState = WPN_ON_BACK; gWaterTrail.clear(); gElbowBend = 0;gShoulderOpen
+					= 0;gSquatAnimating = true;gSquatted = false;
+			}
+		}
 		else if (wParam == 'Z') {
 			if (gWpnState == WPN_IN_HAND) {
 				gWpnState = WPN_Z_COMBO;
@@ -635,38 +644,70 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 				gJumping = true;
 				gJumped = false;
 				gJumpTime = 0.0f;
-				
+
 				Audio::playOnce(L"fxZ", MP3_ACTION_Z);
 			}
-			
+
 		}
 
-		else if (wParam == 'X') { if (gWpnState == WPN_IN_HAND && !gWalking) { gWpnState = WPN_X_CHARGING; gWpnTimer = 0; gWpnCharge = 0; gWpnKeyXDown = true;  
- } }
+		else if (wParam == 'X') {
+			if (gWpnState == WPN_IN_HAND && !gWalking) {
+				gWpnState = WPN_X_CHARGING; gWpnTimer = 0; gWpnCharge = 0; gWpnKeyXDown = true;
+			}
+		}
 
 
-		else if (wParam == 'C') { if (gWpnState == WPN_IN_HAND) { gWpnState = WPN_C_WATERSKIM; gWpnTimer = 0; gWaterTrail.clear();     Audio::playOnce(L"fxC", MP3_ACTION_C);
-} }
+		else if (wParam == 'C') {
+			if (gWpnState == WPN_IN_HAND) {
+				gWpnState = WPN_C_WATERSKIM; gWpnTimer = 0; gWaterTrail.clear();     Audio::playOnce(L"fxC", MP3_ACTION_C);
+			}
+		}
 		else if (wParam == VK_LEFT) {
-	
-	}
-		else if (wParam == VK_UP) {}
-		else if (wParam == VK_DOWN) {}
-		else if (wParam == VK_RIGHT) {}
+			camPanX -= 0.2f;   // pan left
+		}
+		else if (wParam == VK_RIGHT) {
+			camPanX += 0.2f;   // pan right
+		}
+		else if (wParam == VK_UP) {
+			camPanY += 0.2f;   // pan up
+		}
+		else if (wParam == VK_DOWN) {
+			camPanY -= 0.2f;   // pan down
+		}
+		else if (wParam == VK_OEM_4) {   // '[' key
+			nearPlane += 0.5f;   //4move near plane out
+			if (nearPlane >= farPlane - 1.0f) nearPlane = farPlane - 1.0f;
+		}
+		else if (wParam == VK_OEM_6) {   // ']' key
+			nearPlane -= 0.5f;
+			farPlane += 1.0f;    // move far plane further
+		}
+		else if (wParam == VK_OEM_PERIOD) {   // ',' key
+			camRotY -= 2.0f;     // rotate left
+		}
+		else if (wParam == VK_OEM_COMMA) {  // '.' key
+			camRotY += 2.0f;     // rotate right
+		}
+		else if (wParam == VK_OEM_1) {   // ';' key
+			camRotX -= 2.0f;   // tilt up
+		}
+		else if (wParam == VK_OEM_7) {   // ''' key
+			camRotX += 2.0f;   // tilt down
+		}
 		else if (wParam == '1') {
 			if (gWpnState != WPN_IN_HAND) {
 				gWristSpin = 0.0f;
 				gWristSpinActive = true;
 			}
-			}
+		}
 		else if (wParam == '2') {
-				if (gWpnState != WPN_IN_HAND) {
-					if (!gElbowAnimating) {   // only trigger if not already animating
-						gElbowAnimating = true;
-						gElbowBent = !gElbowBent;   // toggle state
-					}
+			if (gWpnState != WPN_IN_HAND) {
+				if (!gElbowAnimating) {   // only trigger if not already animating
+					gElbowAnimating = true;
+					gElbowBent = !gElbowBent;   // toggle state
 				}
-				}
+			}
+		}
 		else if (wParam == '3') {
 			if (gWpnState != WPN_IN_HAND) {
 				if (!gShoulderAnimating) {
@@ -674,7 +715,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 					gShoulderOpened = !gShoulderOpened;  // toggle state
 				}
 			}
-			}
+		}
 
 		else if (wParam == '4') {
 			if (!gHeadAnimating) {
@@ -683,55 +724,55 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 				gHeadShakeCount = 0;
 				gHeadDirection = 1;
 			}
-			}
+		}
 		else if (wParam == '5') {
 			gMarching = true;
 			gMarchAngle = 0.0f;
 			gMarchTime = 0.0f;
-			}
-		
+		}
+
 		else if (wParam == '6') {
-			if (!gSquatAnimating &&!gBowed) {
+			if (!gSquatAnimating && !gBowed) {
 				gSquatAnimating = true;
 				gSquatted = !gSquatted;   // toggle state
 			}
-			}
-		
+		}
+
 		else if (wParam == '7') {
-				if (!gJumping && !gSquatAnimating && !gBowed) {
-					// crouch first
-					gSquatAnimating = true;
-					gSquatted = true;   // go down
-					gJumping = true;
-					gJumped = false;
-					gJumpTime = 0.0f;
-				}
-				}
+			if (!gJumping && !gSquatAnimating && !gBowed) {
+				// crouch first
+				gSquatAnimating = true;
+				gSquatted = true;   // go down
+				gJumping = true;
+				gJumped = false;
+				gJumpTime = 0.0f;
+			}
+		}
 		else if (wParam == '8') {
-				if (gWpnState != WPN_IN_HAND && !gSquatted) {
-					gElbowBend = 0;
-					gShoulderOpen = 0;
-					if (!gBowAnimating) {
-						gBowAnimating = true;
-						gBowed = !gBowed;   // toggle state
-					}
+			if (gWpnState != WPN_IN_HAND && !gSquatted) {
+				gElbowBend = 0;
+				gShoulderOpen = 0;
+				if (!gBowAnimating) {
+					gBowAnimating = true;
+					gBowed = !gBowed;   // toggle state
 				}
-				}
+			}
+		}
 
 		else if (wParam == '9') {
 			gDragonMode = (gDragonMode + 1) % 3; // cycle through 0,1,2
 			gDragonBobPhase = 0.0f;
-					}
+		}
 
 		else if (wParam == '0') {
-			 gWireframeMode = !gWireframeMode;
-    
-			}
+			gWireframeMode = !gWireframeMode;
 
-		
+		}
+
+
 		break;
-	
-		
+
+
 
 	default:
 		break;
@@ -744,15 +785,18 @@ void projection() {
 	glLoadIdentity();						 //reset the projection matrix
 	glRotatef(prx, 1, 0, 0);
 	glRotatef(pry, 0, 1, 0);	             //rotate y for projection	
+	glRotatef(camRotY, 0, 1, 0);
+	glRotatef(camRotX, 1, 0, 0);   // apply x-axis rotation
+	glRotatef(pry + camRotY, 0, 1, 0);
 
+	glTranslatef(camPanX, camPanY, 0);
 	if (isOrtho)
 	{
 		glOrtho(OLeft, ORight, ODown, OUp, ONear, OFar);
 	}
 	else
 	{
-		gluPerspective(90, 1, 1, 200);
-		//glFrustum(-30.0, 30.0, -30.0, 30.0, -10, 100);
+		gluPerspective(90, 1, nearPlane, farPlane);
 		glTranslatef(0, 0, zoom);
 	}
 }
@@ -761,7 +805,7 @@ void projection() {
 //Lighting Function
 void lighting() {
 	if (isLightOn) {
-		   glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
+		glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
 		glEnable(GL_LIGHTING);
 		glEnable(GL_LIGHT0);
 
@@ -800,7 +844,7 @@ void lighting() {
 		glEnable(GL_LIGHTING);
 		glPopMatrix();
 
-	
+
 
 	}
 	else {
@@ -865,6 +909,16 @@ void drawSphere(float r, int slices, int stacks) {
 	}
 }
 
+void drawHalfSphere(float radius, int slices, int stacks) {
+	double eq[4] = { 0.0, -1.0, 0.0, 0.0 }; // clip below Y=0
+	glEnable(GL_CLIP_PLANE0);
+	glClipPlane(GL_CLIP_PLANE0, eq);
+
+	drawSphere(radius, slices, stacks);   // your existing sphere function
+
+	glDisable(GL_CLIP_PLANE0);
+}
+
 // Draw a cylinder / frustum without GLU.
 // Axis: +Z (base at z=0, top at z=h) — same as GLU.
 // Parameters:
@@ -878,7 +932,7 @@ void drawSphere(float r, int slices, int stacks) {
 //   capTop  = draw top disk at z=h
 static void drawCylinder(float r0, float r1, float h,
 	int slices, int stacks,
-	
+
 	bool capBase = true,
 	bool capTop = true)
 {
@@ -977,7 +1031,7 @@ static GLuint getCapsuleList(float r0, float r1, float h, int slices)
 	glNewList(id, GL_COMPILE);
 
 	// 1) Lateral frustum (open ends; spheres will "cap" it visually)
-	drawCylinder(r0, r1, h, slices,1);
+	drawCylinder(r0, r1, h, slices, 1);
 
 	// 2) Bottom sphere centered at z=0
 	//    (matches your original: full sphere intersecting the cylinder)
@@ -1004,7 +1058,7 @@ static GLuint getCapsuleList(float r0, float r1, float h, int slices)
 static void freeCapsuleLists() {
 	for (auto& kv : gCapsuleDL) glDeleteLists(kv.second, 1);
 	gCapsuleDL.clear();
-}	
+}
 
 //--------------------------------------------------------------------
 
@@ -1148,91 +1202,6 @@ static void computeActionPose()
 	actHipPitchR = actHipPitchL = 0;
 	actKneeFlexR = actKneeFlexL = 0;
 
-	//if (gWpnState == WPN_Z_COMBO) {
-	//	float t = gWpnTimer;
-
-	//	const float tPrep = 0.18f, tRise = 0.28f, tHang = 0.20f, tFall = 0.30f;
-	//	float wPrep = clamp01(t / tPrep);
-	//	float wRise = clamp01((t - tPrep) / tRise);
-	//	float wHang = clamp01((t - tPrep - tRise) / tHang);
-	//	float wFall = clamp01((t - tPrep - tRise - tHang) / tFall);
-
-	//	// --- 1. Prep (straighten, set grips) ---
-	//	if (t < 0.1f) {
-	//		actHipPitchR = actHipPitchL = 0.0f;
-	//		actKneeFlexR = actKneeFlexL = 0.0f;
-	//		walkHipPitchL = walkHipPitchR = 0.0f;
-	//		walkKneeFlexL = walkKneeFlexR = 0.0f;
-	//		walkAnkleRollL = walkAnkleRollR = 0.0f;
-	//		actHipPitchL = actHipPitchR = 0.0f;
-	//		actKneeFlexL = actKneeFlexR = 0.0f;
-	//		actRShoulderPitch = +12.0f;  // low grip
-	//		actLShoulderPitch = +18.0f;  // higher grip
-	//	}
-
-	//	// --- 2. Crouch anticipation ---
-	//	if (t < tPrep) {
-	//		actTorsoPitch += lerp(0, +10, wPrep);
-	//		actHipPitchL += lerp(0, +8, wPrep);
-	//		actHipPitchR += lerp(0, +6, wPrep);
-	//		actKneeFlexL += lerp(0, +16, wPrep);
-	//		actKneeFlexR += lerp(0, +14, wPrep);
-
-	//		// both hands preload weapon downward
-	//		actRShoulderPitch += lerp(+12, +28, wPrep);
-	//		actRElbowFlex += lerp(0, +12, wPrep);
-	//		actLShoulderPitch += lerp(+18, +32, wPrep);
-	//		actLElbowFlex += lerp(0, +12, wPrep);
-	//		return;
-	//	}
-
-	//	// --- 3. Rise / Jump ---
-	//	if (t < tPrep + tRise) {
-	//		float u = (t - tPrep) / tRise;
-
-	//		actTorsoPitch += lerp(+10, -6, u);   // straighten torso
-	//		actHipPitchL += lerp(+8, -2, u);
-	//		actHipPitchR += lerp(+6, -2, u);
-	//		actKneeFlexL += lerp(+16, -4, u);   // push off ground
-	//		actKneeFlexR += lerp(+14, -4, u);
-
-	//		// both arms lift trident overhead
-	//		actRShoulderPitch += lerp(+28, +540, u);
-	//		actRElbowFlex += lerp(+12, +22, u);
-	//		actLShoulderPitch += lerp(+32, +540, u);
-	//		actLElbowFlex += lerp(+12, +22, u);
-	//		return;
-	//	}
-
-	//	// --- 4. Hang (weapon fully up, just before chop) ---
-	//	if (t < tPrep + tRise + tHang) {
-	//		actTorsoPitch += -6.0f;
-	//		actRShoulderPitch += +540.0f;
-	//		actLShoulderPitch += +540.0f;
-	//		return;
-	//	}
-
-	//	// --- 5. Chop down / Landing ---
-	//	{
-	//		float u = (t - (tPrep + tRise + tHang)) / tFall;
-	//		float s = easeInOut(u);
-
-	//		actTorsoPitch += lerp(-6, +26, s);  // lean into chop
-	//		actHipPitchL += lerp(-2, +8, s);
-	//		actHipPitchR += lerp(-2, +6, s);
-	//		actKneeFlexL += lerp(-4, +18, s);  // land bend
-	//		actKneeFlexR += lerp(-4, +18, s);
-
-	//		// left hand leads, right follows
-	//		actLShoulderPitch += lerp(+540, +640, s);
-	//		actLElbowFlex += lerp(+22, +32, s);
-	//		actRShoulderPitch += lerp(+540, +620, s);
-	//		actRElbowFlex += lerp(+22, +30, s);
-	//		return;
-	//	}
-	//}
-
-
 	// ===== X : Charge (hold) then Sweep (release)
 	if (gWpnState == WPN_X_CHARGING) {
 		float t = easeInOut(fmodf(gWpnTimer, 0.35f) / 0.35f);        // small loop while charging
@@ -1273,7 +1242,7 @@ static void computeActionPose()
 		// actKneeFlexL += lerp(16, 12, s);
 		// actKneeFlexR += lerp(10, 12, s);
 
-		
+
 		return;
 	}
 
@@ -1287,7 +1256,7 @@ static void computeActionPose()
 			//actTorsoPitch += lerp(0, -8, u);
 			actRShoulderPitch += lerp(0, 80, u);  // arms up
 			actLShoulderPitch += lerp(0, 30, u);
-		
+
 			/*actHipPitchL += lerp(0, 6, u);
 			actHipPitchR += lerp(0, 6, u);
 			actKneeFlexL += lerp(0, 8, u);
@@ -1298,7 +1267,7 @@ static void computeActionPose()
 			float s = sinf((t - tRaise) * 18.0f) * 3.0f;
 			actRShoulderPitch += 80.0f;
 			actLShoulderPitch += 30.0f;
-			
+
 			//actTorsoPitch += -6.0f;
 		}
 		return;
@@ -1316,7 +1285,7 @@ static void renderBullets() {
 	for (const Bullet& b : gBullets) {
 		float a = fminf(1.0f, fmaxf(0.0f, b.life));   // fade out
 		glPushMatrix();
-		glTranslatef(b.p[0], b.p[1] + 3.8 , b.p[2] );
+		glTranslatef(b.p[0], b.p[1] + 3.8, b.p[2]);
 		glColor4f(0.55f, 0.85f, 1.0f, 0.25f + 0.55f * a);
 		// halo
 		glScalef(0.22f, 0.22f, 0.22f);
@@ -1648,7 +1617,7 @@ void drawDragonHead() {
 	glRotatef(-90, 0, 0, 1);
 	// === Add continuous green flame ===
 	// Adjust (0, 50, 200) to match mouth position in your OBJ
-	drawFlame3D(0,-400,0, 200.0f);
+	drawFlame3D(0, -400, 0, 200.0f);
 
 	glPopMatrix();
 	glPopMatrix();
@@ -1752,25 +1721,25 @@ void action() {
 					}
 				}
 				else {
-					
 
-						gBowAngle -= 3.0f;
-						if (gBowAngle <= 0.0f) {
-							gBowAngle = 0.0f;
-							gBowAnimating = false;
-							gBowed = false;
-							gWpnState = WPN_IN_HAND;
-							gImpactTimer = 0.38f;
-							gComboPhase = 0; // reset
-						}
 
-					
+					gBowAngle -= 3.0f;
+					if (gBowAngle <= 0.0f) {
+						gBowAngle = 0.0f;
+						gBowAnimating = false;
+						gBowed = false;
+						gWpnState = WPN_IN_HAND;
+						gImpactTimer = 0.38f;
+						gComboPhase = 0; // reset
+					}
+
+
 				}
-				
+
 			}
 			break;
-	
-			
+
+
 		}
 	}
 
@@ -1881,13 +1850,13 @@ void action() {
 	}
 
 	if (gMarching) {
-		gMarchTime ++;
+		gMarchTime++;
 
 		// marching swing speed (adjust as needed)
-		gMarchAngle = 20.0f * sinf(gMarchTime *0.075f);
+		gMarchAngle = 20.0f * sinf(gMarchTime * 0.075f);
 		// 6.0f → about 1 cycle per second (left–right)
 
-		if (gMarchTime >180) {   // stop after 3 seconds
+		if (gMarchTime > 180) {   // stop after 3 seconds
 			gMarching = false;
 			gMarchAngle = 0.0f;
 		}
@@ -1935,13 +1904,13 @@ void action() {
 				gJumpTime += 0.2;
 				if (gJumpTime > 6)
 				{
-					 gJumpTime = 6; gJumped = true;
+					gJumpTime = 6; gJumped = true;
 				}
-			
+
 			}
 			else {
 				gJumpTime -= 0.1;
-				if (gJumpTime <= 0) gJumping = false; 
+				if (gJumpTime <= 0) gJumping = false;
 			}
 
 		}
@@ -1952,7 +1921,7 @@ void action() {
 			gSquatDegTorso += 1.0f; if (gSquatDegTorso > 20) gSquatDegTorso = 20;
 			gThighDegTorso += 2.0f; if (gThighDegTorso > 80) gThighDegTorso = 80;
 			gSquatThigh += 0.2f;if (gSquatThigh > 1.6) gSquatThigh = 1.6;
-			if (gSquatDegTorso >= 20 && gThighDegTorso >= 80 && gSquatThigh>=1.6) gSquatAnimating = false;
+			if (gSquatDegTorso >= 20 && gThighDegTorso >= 80 && gSquatThigh >= 1.6) gSquatAnimating = false;
 		}
 		else {
 			gSquatDegTorso -= 1.0f; if (gSquatDegTorso < 0) gSquatDegTorso = 0;
@@ -1963,7 +1932,7 @@ void action() {
 		}
 	}
 
-	
+
 
 
 
@@ -2317,7 +2286,7 @@ void body() {
 	// ---------- ANATOMY DETAILS ON TOP OF THE TORSO ----------
 	const float BODY_H = 6.2f;         // must match your drawLoftedBody height
 	const int   SLICES = 72;
-	
+
 	// Reuse the same TORSO[] you already created above in body()
 
 	// === ABS (six-pack) ===
@@ -2348,11 +2317,11 @@ void body() {
 			SKIN_FAIR_NEUTRAL.base[2]);
 		drawEllipsoid(d.w, d.h, d.depth, 24);
 
-			
-			glLineWidth(1.4f);
-			glColor3f(0.05f, 0.05f, 0.05f);
-			// outline in the ellipsoid's "front" plane (slight +Z so it doesn't z-fight)
-			drawEllipseOutlineXY(d.w, d.h, d.depth * 0.04f, 48);
+
+		glLineWidth(1.4f);
+		glColor3f(0.05f, 0.05f, 0.05f);
+		// outline in the ellipsoid's "front" plane (slight +Z so it doesn't z-fight)
+		drawEllipseOutlineXY(d.w, d.h, d.depth * 0.04f, 48);
 		glPopMatrix();
 		};
 
@@ -2401,7 +2370,7 @@ void body() {
 		drawEllipsoid(0.55f, 0.65f, 0.45f, 28);
 		glPopMatrix();
 
-		
+
 
 		// ===================== RIGHT SHOULDER EPaulette (armor + fringe) =====================
 		{
@@ -2570,7 +2539,7 @@ void body() {
 		}
 		// =================== END RIGHT SHOULDER EPaulette ===================
 
-		
+
 	}
 
 	// === OPTIONAL: Guide lines on the torso surface ===
@@ -2609,7 +2578,7 @@ void body() {
 			SKIN_FAIR_NEUTRAL.base[2]);
 		drawEllipsoid(L.w, L.h, L.d, 36);
 		if (showModelLines) {
-			
+
 			glLineWidth(1.6f);
 			glColor3f(0.08f, 0.08f, 0.08f);
 			// the lobe has a pre-scale; keep outline on the same local XY plane
@@ -2783,7 +2752,7 @@ static void drawCapsuleAlongZ(float r0, float r1, float h, int slices = 28) {
 
 	// Optional model lines
 	/*if (showModelLines) {
-		
+
 		drawCapsuleWireOverlayZ(r0, r1, h);
 	}*/
 }
@@ -2830,7 +2799,7 @@ static inline void colGold() { glColor3f(0.92f, 0.78f, 0.25f); }
 static inline void colSteel() { glColor3f(0.78f, 0.82f, 0.88f); }
 static inline void colBlue() { glColor3f(0.18f, 0.28f, 0.65f); }
 static inline void colLeather() { glColor3f(0.40f, 0.28f, 0.18f); }
-static inline void colGem() { glColor3f(0.56,0.01,0); }
+static inline void colGem() { glColor3f(0.56, 0.01, 0); }
 
 // simple box (you already have quadBox) + thin wedge tip
 static void triWedgeTip(float w, float h, float d) {
@@ -2904,9 +2873,9 @@ static void centerSpear(float L) {
 // ===== Improved trident (takes a length scale) =====
 static void drawTridentGeo(float lengthScale = 1.0f) {
 	// Handle (longer by default)
-	const float handleH = 7.2f * lengthScale;   
+	const float handleH = 7.2f * lengthScale;
 	glPushMatrix();
-	colBlue();  
+	colBlue();
 	quadBox(0.22f, handleH, 0.22f);
 	// leather bands
 	glTranslatef(0, -handleH * 0.42f, 0);
@@ -2940,7 +2909,7 @@ static void drawTridentGeo(float lengthScale = 1.0f) {
 	glPushMatrix(); glTranslatef(0.55f, 0.20f, 0);
 	//glRotatef(25, 0, 1, 0); 
 	quadBox(0.12f, 0.60f, 0.12f); glTranslatef(0, -0.30f, 0); triWedgeTip(0.10f, 0.22f, 0.10f); glPopMatrix();
-	glPushMatrix(); glTranslatef(-0.55f, 0.20f, 0); 
+	glPushMatrix(); glTranslatef(-0.55f, 0.20f, 0);
 	//glRotatef(-25, 0, 1, 0);
 	quadBox(0.12f, 0.60f, 0.12f); glTranslatef(0, -0.30f, 0); triWedgeTip(0.10f, 0.22f, 0.10f); glPopMatrix();
 
@@ -2972,7 +2941,7 @@ static void drawTridentHeldPose() {
 	glTranslatef(0.0f, -0.28f, 0.0f);
 	// lay along forward (+Z) from the hand
 	glRotatef(-90.0f, 1, 0, 0);
-	glRotatef(180.0f, 0,1, 0);
+	glRotatef(180.0f, 0, 1, 0);
 	glRotatef(+8.0f, 0, 0, 1);
 
 	// === add motion by state ===
@@ -3002,7 +2971,7 @@ static void drawTridentHeldPose() {
 
 	//}
 	//else
-		if (gWpnState == WPN_X_CHARGING) {
+	if (gWpnState == WPN_X_CHARGING) {
 		// slight tremble + glow length implied elsewhere
 		glRotatef(6.0f * sinf(gWpnTimer * 22.0f), 0, 0, 1);
 	}
@@ -3040,7 +3009,7 @@ static void drawTridentHeldPose() {
 
 
 	// draw the actual weapon
-		drawTridentGeo(/*lengthScale*/1.15f);
+	drawTridentGeo(/*lengthScale*/1.15f);
 	glPopMatrix();
 }
 
@@ -3115,14 +3084,14 @@ static void triFingertip(float w, float depth) {
 	glPushMatrix();
 	glRotatef(-90, 0, 1, 1);
 	glTranslatef(0, -0.05, 0.18);
-	glScalef(2,2,1.5);
+	glScalef(2, 2, 1.5);
 	const float r = w * 0.5f, z = depth * 0.5f;
 	glBegin(GL_TRIANGLES);
 	nrm(0, 0, -1);
 	glVertex3f(r, 0, -z); glVertex3f(-r, 0, -z); glVertex3f(0, r * 1.1f, -z);
 	glEnd();
 	glPopMatrix();
-	
+
 
 
 }
@@ -3377,18 +3346,18 @@ static void tubeSectionQuads(int slices, float L,
 // Simple end cap (TRIANGLES) for an ellipse at Y = y, facing +Y or -Y (dir = +1/-1).
 static void ellipseCapTri(int slices, float y, float rx, float rz, int dir)
 {
-    float ny = (dir > 0 ? 1.0f : -1.0f);
-    glBegin(GL_TRIANGLES);
-    for (int i = 0; i < slices; ++i) {
-        int j = (i + 1) % slices;
-        float a0 = (2.0f * 3.1415926f * i) / slices;
-        float a1 = (2.0f * 3.1415926f * j) / slices;
+	float ny = (dir > 0 ? 1.0f : -1.0f);
+	glBegin(GL_TRIANGLES);
+	for (int i = 0; i < slices; ++i) {
+		int j = (i + 1) % slices;
+		float a0 = (2.0f * 3.1415926f * i) / slices;
+		float a1 = (2.0f * 3.1415926f * j) / slices;
 		float zero = 0;
-       Gfx::norm3(zero, ny, zero); glVertex3f(0, y, 0);
-       Gfx::norm3(zero, ny, zero); glVertex3f(rx * cosf(a1), y, rz * sinf(a1));
-       Gfx::norm3(zero, ny, zero); glVertex3f(rx * cosf(a0), y, rz * sinf(a0));
-    }
-    glEnd();
+		Gfx::norm3(zero, ny, zero); glVertex3f(0, y, 0);
+		Gfx::norm3(zero, ny, zero); glVertex3f(rx * cosf(a1), y, rz * sinf(a1));
+		Gfx::norm3(zero, ny, zero); glVertex3f(rx * cosf(a0), y, rz * sinf(a0));
+	}
+	glEnd();
 }
 
 
@@ -3403,7 +3372,7 @@ static void drawArmDown(int side)
 	// skin
 	const SkinPreset& SKIN = SKIN_LIGHT_TAN;
 	applySkinMaterial(SKIN.base);
-	glColor3f(SKIN.base[0] * 0.95, SKIN.base[1]*0.95, SKIN.base[2] * 0.95);
+	glColor3f(SKIN.base[0] * 0.95, SKIN.base[1] * 0.95, SKIN.base[2] * 0.95);
 
 	// placement at shoulder
 	const float SHOULDER_YN = 0.78f;
@@ -3536,7 +3505,7 @@ static void drawArmDown(int side)
 	// Use animated wrist angles
 
 	// ---------- HAND ----------
-	bool grip = (    
+	bool grip = (
 		gWpnState == WPN_IN_HAND ||
 		gWpnState == WPN_Z_COMBO ||
 		gWpnState == WPN_X_CHARGING ||
@@ -3544,7 +3513,7 @@ static void drawArmDown(int side)
 		gWpnState == WPN_C_WATERSKIM);
 
 	if (side > 0) {
-		if(gWristSpinActive)glRotatef(+gWristSpin, 0, 1, 0);   // anticlockwise
+		if (gWristSpinActive)glRotatef(+gWristSpin, 0, 1, 0);   // anticlockwise
 
 		drawHandNatural(side, grip);
 
@@ -3647,9 +3616,9 @@ static void drawFoot(int side /*-1 left, +1 right*/) {
 		// Leather look
 		glColor3f(0.35f, 0.22f, 0.15f);
 		glPushMatrix();
-		glScalef(1, 1.2,1.3);
+		glScalef(1, 1.2, 1.3);
 		glRotatef(180, 0, 0, 1.1);
-		glRotatef(5, 1,0, 0);
+		glRotatef(5, 1, 0, 0);
 		glTranslatef(0, 1.4, -0.16);
 		const float SOLE_T = THICK * 0.18f;         // outsole thickness
 		const float SOLE_Z0 = -SOLE_T;              // bottom of sole
@@ -3689,7 +3658,7 @@ static void drawFoot(int side /*-1 left, +1 right*/) {
 		auto strapAcross = [&](float yCenter, float halfWidthScale, float halfDepth)
 			{
 				const float xs = halfWidthScale * (WIDTH * 0.50f + STRAP_OVERHANG);
-				boxQuads(-xs, +xs, yCenter - halfDepth, yCenter + halfDepth, STRAP_Z0 * 8, STRAP_Z1 );
+				boxQuads(-xs, +xs, yCenter - halfDepth, yCenter + halfDepth, STRAP_Z0 * 8, STRAP_Z1);
 			};
 
 		// Helper: a vertical strap rising from the side (for the cage)
@@ -3894,9 +3863,9 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 
 	glPushMatrix();
 	//if (gSquatAnimating) {
-	
-		glTranslatef(0, 0, -gSquatThigh);
-		glRotatef(gThighDegTorso, 1, 0, 0); //Squat, thigh will bend for 65 clockwise
+
+	glTranslatef(0, 0, -gSquatThigh);
+	glRotatef(gThighDegTorso, 1, 0, 0); //Squat, thigh will bend for 65 clockwise
 
 	//}
 	// thigh
@@ -3926,7 +3895,7 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	// --- shin / calf (hinges correctly off knee sphere now) ---
 	drawCapsuleDownY(CALF_R0, CALF_R1, SHIN_LEN * 0.55f);
 	//Knee Protector panel
-	glColor3f(0.5,0.5,0.5);
+	glColor3f(0.5, 0.5, 0.5);
 	drawSarongPanel(/*halfW*/0.33f, /*len*/THIGH_LEN * 0.45f, /*halfT*/0.33f);
 	// restore skin color for the leg
 	glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
@@ -3961,12 +3930,15 @@ static void drawEllipticFrustum(float yTop, float yBot,
 	for (int i = 0; i <= slices; ++i) {
 		float t = (float)i / (float)slices * 6.28318530718f; // 2π
 		float c = cosf(t), s = sinf(t);
-
+		float u = (float)i / slices;       // wrap horizontally
+		glTexCoord2f(u, 1.0f);
 		// top rim
 		glNormal3f(c, 0, s);
 		glVertex3f(aTop * c, yTop, bTop * s);
 
 		// bottom rim
+
+		glTexCoord2f(u, 0.0f);
 		glNormal3f(c, 0, s);
 		glVertex3f(aBot * c, yBot, bBot * s);
 	}
@@ -4001,6 +3973,10 @@ static void drawEllipticFrustum(float yTop, float yBot,
 static void drawSarongHuggingTorso(float pelvisY)
 {
 	// gold sarong material
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, texSarong);
+	//glColor3f(1, 1, 1);  // keep white so texture color shows fully
+
 	glColor3f(0.83f, 0.69f, 0.22f);
 
 	// pull torso profile
@@ -4016,7 +3992,7 @@ static void drawSarongHuggingTorso(float pelvisY)
 	float ynBot = Gfx::clamp((pelvisY - 0.12f) / BODY_H, 0.0f, 1.0f);
 
 	// top ellipse (hug torso tightly)
-	float aTop = (sampleHalfWidthA(T, TN, ynTop) * 1.020f)*0.8;
+	float aTop = (sampleHalfWidthA(T, TN, ynTop) * 1.020f) * 0.8;
 	float bTop = sampleHalfDepthB(T, TN, ynTop) * 1.020f;
 
 	// base bottom ellipse (covers thighs)
@@ -4031,8 +4007,8 @@ static void drawSarongHuggingTorso(float pelvisY)
 
 	// scale bottom ellipse outward when legs apart
 	float squatExpand = 1.0f + 0.01f * (gThighDegTorso / 80.0f);
-	aBot *= squatExpand ;
-	bBot *= squatExpand *1.45;
+	aBot *= squatExpand;
+	bBot *= squatExpand * 1.45;
 
 	// draw sarong frustum
 	glPushMatrix();
@@ -4040,16 +4016,27 @@ static void drawSarongHuggingTorso(float pelvisY)
 	drawEllipticFrustum(yTop, yBot, aTop, bTop, aBot, bBot, 72);
 	glPopMatrix();
 
-	if (gSquatDegTorso >= 20 && gThighDegTorso >= 80 && gSquatThigh >= 1.6)
+	if (gSquatted)
 	{
 		glPushMatrix();
-		glTranslatef(0, -gSquatThigh*1.65, -gSquatThigh *1.95 );
+		glTranslatef(0, -gSquatThigh * 1.65, -gSquatThigh * 1.95);
 		glRotatef(180, 0, 0, 1);
 		glRotatef(-gThighDegTorso, 1, 0, 0);
+		glPushMatrix();
+		glTranslated(0,-0.3,0);
+		glRotatef(180, 1, 0, 0);
+		glScalef(1, 0.4, 1.15);
+
+		drawHalfSphere( aTop * 1.5, 36, 36);
+
+		glPopMatrix();
 		glScalef(1, 0.5, 1.7);
-		drawEllipticFrustum(yTop, yBot, aTop *1.5, bTop, aBot *0.8, bBot *0.8, 72);
+		drawEllipticFrustum(yTop, yBot, aTop * 1.5, bTop, aBot * 0.8, bBot * 0.8, 72);
+		
 		glPopMatrix();
 	}
+	glDisable(GL_TEXTURE_2D);
+
 }
 
 
@@ -4064,50 +4051,50 @@ void rightleg() { drawLegDown(+1, gPelvisY, gPelvisA, gPelvisB); }
 // ===== HEAD (skull + face planes + ears + neck) =====================
 
 // simple ellipse wire in local XY (used for "V" guides)
-static void headEllipseXY(float rx, float ry, float z=0.0f, int seg=72){
+static void headEllipseXY(float rx, float ry, float z = 0.0f, int seg = 72) {
 	glBegin(GL_LINE_LOOP);
-	for(int i=0;i<seg;++i){
-		float t = (float)i/seg * 6.28318530718f;
-		glVertex3f(rx*cosf(t), ry*sinf(t), z);
+	for (int i = 0;i < seg;++i) {
+		float t = (float)i / seg * 6.28318530718f;
+		glVertex3f(rx * cosf(t), ry * sinf(t), z);
 	}
 	glEnd();
 }
 
 // longitudinal guides on an ellipsoid (very light, good for modeling)
-static void headGuides(float rx, float ry, float rz){
+static void headGuides(float rx, float ry, float rz) {
 
 	glLineWidth(1.2f);
-	glColor3f(0.04f,0.04f,0.04f);
+	glColor3f(0.04f, 0.04f, 0.04f);
 
 	// “latitude” rings
 	glPushMatrix();                     // equator
 	headEllipseXY(rx, rz);              // XY→(x,z); at y=0
 	glPopMatrix();
 
-	for(int k=1;k<=3;++k){              // a few above and below
-		float f=(float)k/4.0f;
-		float yy =  ry*(0.55f*f);       // y offsets
-		float s  =  sqrtf(1.0f - (yy/ry)*(yy/ry));
-		headEllipseXY(rx*s, rz*s, 0.0f);            // +y ring
+	for (int k = 1;k <= 3;++k) {              // a few above and below
+		float f = (float)k / 4.0f;
+		float yy = ry * (0.55f * f);       // y offsets
+		float s = sqrtf(1.0f - (yy / ry) * (yy / ry));
+		headEllipseXY(rx * s, rz * s, 0.0f);            // +y ring
 		glPushMatrix();
-		glTranslatef(0.0f, -yy*2.0f, 0.0f);         // mirror to -y
-		headEllipseXY(rx*s, rz*s, 0.0f);
+		glTranslatef(0.0f, -yy * 2.0f, 0.0f);         // mirror to -y
+		headEllipseXY(rx * s, rz * s, 0.0f);
 		glPopMatrix();
 	}
 
 	// “meridians” (front–back & diagonals)
-	for(int m=0;m<6;++m){
-		float th = (float)m * (6.28318530718f/6.0f);
+	for (int m = 0;m < 6;++m) {
+		float th = (float)m * (6.28318530718f / 6.0f);
 		float cx = cosf(th), sx = sinf(th);
 
 		glBegin(GL_LINE_STRIP);
-		for(int i=0;i<=48;++i){
-			float t = -1.0f + 2.0f*(float)i/48.0f;  // -1..+1 latitude
+		for (int i = 0;i <= 48;++i) {
+			float t = -1.0f + 2.0f * (float)i / 48.0f;  // -1..+1 latitude
 			float y = ry * t;
-			float s = sqrtf(1.0f - (y/ry)*(y/ry));
-			float x = rx * (cx*s);
-			float z = rz * (sx*s);
-			glVertex3f(x,y,z);
+			float s = sqrtf(1.0f - (y / ry) * (y / ry));
+			float x = rx * (cx * s);
+			float z = rz * (sx * s);
+			glVertex3f(x, y, z);
 		}
 		glEnd();
 	}
@@ -4115,19 +4102,19 @@ static void headGuides(float rx, float ry, float rz){
 }
 
 // tiny helper: ear (flattened ellipsoid, slight tilt)
-static void drawEar(float side /*-1 left, +1 right*/, float rx, float ry, float rz){
+static void drawEar(float side /*-1 left, +1 right*/, float rx, float ry, float rz) {
 	glPushMatrix();
-	glRotatef(10.0f*side, 0,1,0);           // yaw open
-	glRotatef(8.0f, 0,0,1);                 // little roll
-	glScalef(0.85f,1.0f,0.72f);             // flatten a touch
-	drawEllipsoid(rx,ry,rz,22);
+	glRotatef(10.0f * side, 0, 1, 0);           // yaw open
+	glRotatef(8.0f, 0, 0, 1);                 // little roll
+	glScalef(0.85f, 1.0f, 0.72f);             // flatten a touch
+	drawEllipsoid(rx, ry, rz, 22);
 	glPopMatrix();
 }
 
 // short neck as a capsule that grows upward (+Y)
-static void drawNeck(float rTop, float rBot, float len){
+static void drawNeck(float rTop, float rBot, float len) {
 	glPushMatrix();
-	glRotatef(+90.0f, 1,0,0);               // build along +Z
+	glRotatef(+90.0f, 1, 0, 0);               // build along +Z
 
 	glCallList(getCapsuleList(rTop, rBot, len, 28));
 	glPopMatrix();
@@ -4300,7 +4287,7 @@ void drawPoseidonHairLobes(float RX, float RY, float RZ)
 	// ---------- 0) Hair cap (soft base volume) ----------
 	glPushMatrix();
 	glTranslatef(0.0f, RY * -0.03, -0.111);
-	glColor3f(0.15,0.15,0.15);
+	glColor3f(0.15, 0.15, 0.15);
 	glScalef(1.08f, 1.0f, 1.08f);                 // flatter top, wider sides
 	drawEllipsoid(RX * 1.02f, RY * 0.86f, RZ * 1.02f, 8);
 	glPopMatrix();
@@ -4340,7 +4327,7 @@ void drawPoseidonHairLobes(float RX, float RY, float RZ)
 		{
 			glPushMatrix();
 			// anchor on the skull surface
-			glColor3f(0,0,0);
+			glColor3f(0, 0, 0);
 			float a = yawDeg * 3.1415926f / 180.f;
 			float xB = RX * radScale * cosf(a);
 			float zB = RZ * radScale * sinf(a);
@@ -4472,7 +4459,7 @@ void drawPoseidonHairLobes(float RX, float RY, float RZ)
 
 
 
-	
+
 	// ---------- 3) Side heavy curls (poseidon wings) ----------
 	for (int s = -1; s <= 1; s += 2) {
 		float yaw = (s < 0) ? -80.f : +80.f;
@@ -4627,7 +4614,7 @@ static void drawBeardPoseidon(float RX, float RY, float RZ)
 		glPopMatrix();
 	}
 
-	
+
 
 	glPopMatrix(); // anchor
 	glPopAttrib();
@@ -4635,7 +4622,7 @@ static void drawBeardPoseidon(float RX, float RY, float RZ)
 
 
 // Main head builder. Places head on top of your parametric torso.
-void head(){
+void head() {
 	// pull torso profile for exact neck placement
 	const EllipseProfile* T; int TN; float BODY_H;
 	getTorsoProfile(T, TN, BODY_H);
@@ -4648,7 +4635,7 @@ void head(){
 	// materials/colors consistent with body
 	const SkinPreset& SKIN = SKIN_LIGHT_TAN;
 	applySkinMaterial(SKIN.base);
-		glColor3f(SKIN.base[0]*0.95,SKIN.base[1] * 0.95,SKIN.base[2] * 0.95);
+	glColor3f(SKIN.base[0] * 0.95, SKIN.base[1] * 0.95, SKIN.base[2] * 0.95);
 
 	// overall proportions (tuned to your screenshot scale)
 	// --- proportions (bigger skull) ---
@@ -4676,7 +4663,7 @@ void head(){
 	glTranslatef(0.0f, neckY, 0.0f);
 
 	// slight forward offset so jaw sits a hair in front of torso line
-	glTranslatef(0.0f, 0.0f, bNeck*0.04f);
+	glTranslatef(0.0f, 0.0f, bNeck * 0.04f);
 	// === Walking dynamics ===
 	if (gWalking) {
 		// Vertical bob (reduced amplitude vs torso bob)
@@ -4700,11 +4687,11 @@ void head(){
 	//glPushMatrix();
 	// center neck, slight forward lean
 	//glRotatef(3.0f, 1,0,0);
-	
-	
+
+
 	drawNeck(NECK_R0, NECK_R1, NECK_L);
 	// raise to skull center
-	glTranslatef(0.0f, NECK_L + SKULL_RY*0.30f, 0.0f);
+	glTranslatef(0.0f, NECK_L + SKULL_RY * 0.30f, 0.0f);
 
 	// ================= Skull =================
 	glPushMatrix();
@@ -4736,7 +4723,7 @@ void head(){
 		glPopMatrix();
 
 		// Eyelids = very thin ellipsoids (upper and lower)
-		glColor3f(0,0,0);                // skin
+		glColor3f(0, 0, 0);                // skin
 		// upper lid
 		glPushMatrix();
 		glTranslatef(0.0f, +sclRY * 0.75f, zF * 0.80f);
@@ -4756,7 +4743,7 @@ void head(){
 		glPushMatrix(); glTranslatef(0, +sclRY * 0.40f, zF * 0.70f);
 		headEllipseXY(sclRX * 0.95f, sclRY * 0.45f, 0.0f, 42);
 		glPopMatrix();
-			
+
 
 		glPopMatrix();
 		};
@@ -4977,7 +4964,7 @@ void head(){
 	glTranslatef(-0.1, 0, 0.4);
 	drawBeardPoseidon(SKULL_RX, SKULL_RY, SKULL_RZ);
 	glPopMatrix();
-	
+
 	// ================= Mouth + Lips =================
 	{
 		const float mY = -SKULL_RY * 0.50f;
@@ -5007,22 +4994,22 @@ void head(){
 		drawDiskZ(0.22f, 0.0f, 36);                      // slight fill
 		glPopMatrix();
 
-		
+
 	}
 
 	// ================= Ears =================
 	// roughly middle of head height, slightly behind face plane
-	const float earY = -SKULL_RY*0.10f;
-	const float earZ = -SKULL_RZ*0.05f;
+	const float earY = -SKULL_RY * 0.10f;
+	const float earZ = -SKULL_RZ * 0.05f;
 	setSkin(SKIN.areola[0], SKIN.areola[1], SKIN.areola[2]);
 
 	glPushMatrix();                            // Left
-	glTranslatef(-SKULL_RX*0.98f, earY, earZ);
+	glTranslatef(-SKULL_RX * 0.98f, earY, earZ);
 	drawEar(-1, 0.22f, 0.30f, 0.16f);
 	glPopMatrix();
 
 	glPushMatrix();                            // Right
-	glTranslatef(+SKULL_RX*0.98f, earY, earZ);
+	glTranslatef(+SKULL_RX * 0.98f, earY, earZ);
 	drawEar(+1, 0.22f, 0.30f, 0.16f);
 	glPopMatrix();
 
@@ -5052,7 +5039,7 @@ void head(){
 
 
 void poseidon() {
-	glClearColor(0,0.1372,0.2235,0);
+	glClearColor(0, 0.1372, 0.2235, 0);
 	glEnable(GL_DEPTH_TEST);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glColor3f(1.0f, 1.0f, 1.0f);
@@ -5064,8 +5051,8 @@ void poseidon() {
 
 	projection();
 
-	
-	glDisable(GL_LINE_SMOOTH);                  
+
+	glDisable(GL_LINE_SMOOTH);
 	glDisable(GL_POLYGON_SMOOTH);
 
 
@@ -5073,13 +5060,13 @@ void poseidon() {
 
 
 
-		GLfloat matrix_amb[16] = { lightPos1[1],  0,  0, 0,
-								-lightPos1[0], 0,  -lightPos1[2], -1,
-								0,  0,  lightPos1[1],0,
-								0,  0,  0,lightPos1[1],
-		};
+	GLfloat matrix_amb[16] = { lightPos1[1],  0,  0, 0,
+							-lightPos1[0], 0,  -lightPos1[2], -1,
+							0,  0,  lightPos1[1],0,
+							0,  0,  0,lightPos1[1],
+	};
 
-	
+
 
 
 	glPushMatrix();
@@ -5115,7 +5102,7 @@ void poseidon() {
 		break;
 	}
 	glPushMatrix();
-	glTranslatef(0, -gSquatThigh,-gSquatThigh);
+	glTranslatef(0, -gSquatThigh, -gSquatThigh);
 	glRotatef(gBowAngle, 1, 0, 0);   // rotate forward around X
 	glRotatef(gSquatDegTorso, 1, 0, 0);
 
@@ -5149,7 +5136,7 @@ void poseidon() {
 	glPopMatrix();
 
 	// === Orbiting Dragon Heads ===
-	
+
 	glPushMatrix();
 	dragonOrbitAngle += 0.3f;
 	if (dragonOrbitAngle > 360.0f) dragonOrbitAngle -= 360.0f;
@@ -5202,10 +5189,10 @@ void poseidon() {
 		glPopMatrix();
 	}
 	glPopMatrix();
-	
 
 
-	
+
+
 
 
 
@@ -5214,15 +5201,15 @@ void poseidon() {
 
 
 
-	
-	
+
+
 
 
 	glPopMatrix();
 
 	glPopMatrix();
 
-	
+
 
 
 	// C water trail (world-space)
@@ -5253,7 +5240,7 @@ void poseidon() {
 
 
 
-	
+
 }
 void display()
 {// in poseidon(), before drawing your model (after clears/projection)
@@ -5289,7 +5276,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	if (!RegisterClassEx(&wc)) return false;
 
 	HWND hWnd = CreateWindow(WINDOW_TITLE, WINDOW_TITLE, WS_OVERLAPPEDWINDOW,
-		CW_USEDEFAULT, CW_USEDEFAULT,800,600,
+		CW_USEDEFAULT, CW_USEDEFAULT, 800, 600,
 		NULL, NULL, wc.hInstance, NULL);
 
 	//--------------------------------
@@ -5308,6 +5295,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	if (!wglMakeCurrent(hdc, hglrc)) return false;
 	initQuadric();
 	bgTex = loadTextureBMP("sea.bmp");
+	texSarong = loadTexture("sarong.bmp");
 	initModels();
 	//--------------------------------
 	//	End initialization
@@ -5338,4 +5326,5 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 
 	return true;
 }
+//--------------------------------------------------------------------
 //--------------------------------------------------------------------
