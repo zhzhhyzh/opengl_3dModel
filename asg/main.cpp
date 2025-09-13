@@ -302,6 +302,9 @@ GLuint stringTex = 0;
 GLuint redGemTex = 0;
 GLuint blueGemTex = 0;
 GLuint leatherTex = 0;
+GLuint mbTex = 0;
+GLuint dbTex = 0;
+GLuint wbTex = 0;
 GLuint hairTex = 0;
 GLuint bgTex = 0;
 GLuint texSarong = 0;
@@ -3416,10 +3419,10 @@ static void drawArmDown(int side)
 
 	//Due to draw -1, there fore it will be like this
 	if (side > 0) {
-		// ===================== LEFT SHOULDER EPaulette (armor + fringe) =====================
+		// ===================== RIGHT SHOULDER EPaulette (armor + fringe) =====================
 		{
 			glPushMatrix();
-			glTranslatef(-4, 0.5, 0);
+			glTranslatef(0, 0.5, 0);
 			//glRotatef(-5, 1, 0, 0);
 			glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_POLYGON_BIT);
 			//glDisable(GL_TEXTURE_2D);
@@ -4654,17 +4657,24 @@ static void drawBeardPoseidon(float RX, float RY, float RZ)
 		glTranslatef(s * RX * 0.30f, +RY * 0.05f, RZ * 0.18f); // corner of lip
 		glRotatef(10.0f, 1, 0, 0);                    // slight down turn
 		glRotatef(18.0f * s, 0, 1, 0);                // flare out
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, (s > 0) ? mbTex: wbTex);
 		glColor3fv((s > 0) ? B1 : B2);
 		beardClump(/*len*/0.75f * RY, /*w0*/0.22f * RX, /*w1*/0.06f * RX,
 			/*curlFwd*/0.20f * RZ, /*curlSide*/0.10f * s);
+		glDisable(GL_TEXTURE_2D);
 		glPopMatrix();
 	}
 
 	// center philtrum tuft
 	glPushMatrix();
 	glTranslatef(0.0f, +RY * 0.02f, RZ * 0.18f);
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, wbTex);
 	glColor3fv(B2);
 	beardClump(0.55f * RY, 0.16f * RX, 0.05f * RX, 0.14f * RZ, 0.0f);
+	glDisable(GL_TEXTURE_2D);
+
 	glPopMatrix();
 
 	// -------- (B) Chin mass (primary layer) --------
@@ -4686,8 +4696,12 @@ static void drawBeardPoseidon(float RX, float RY, float RZ)
 		float w0 = (0.22f + 0.05f * cosf(ang * 2.0f)) * RX;
 		float w1 = 0.08f * RX;
 
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, (i % 3 == 0) ? dbTex : ((i % 3 == 1) ? mbTex : wbTex));
 		glColor3fv((i % 3 == 0) ? B0 : ((i % 3 == 1) ? B1 : B2));
 		beardClump(len, w0, w1, /*curlFwd*/0.28f * RZ, /*curlSide*/sideCurl);
+		glDisable(GL_TEXTURE_2D);
+
 		glPopMatrix();
 	}
 
@@ -4702,8 +4716,12 @@ static void drawBeardPoseidon(float RX, float RY, float RZ)
 		glTranslatef(x, -RY * 0.04f, z);
 		glRotatef(10.0f, 1, 0, 0);
 		glRotatef((ang * 180.0f / 3.14159f), 0, 1, 0);
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, dbTex );
 		glColor3fv(B0);
 		beardClump(1.22f * RY, 0.18f * RX, 0.06f * RX, 0.34f * RZ, 0.05f * sinf(ang * 2.0f));
+		glDisable(GL_TEXTURE_2D);
+
 		glPopMatrix();
 	}
 
@@ -5399,6 +5417,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	silverTex = loadTexture("silver.bmp");
 	stringTex = loadTexture("string.bmp");
 	leatherTex = loadTexture("leather.bmp");
+	mbTex = loadTexture("midbrown.bmp");
+	dbTex = loadTexture("deepbrown.bmp");
+	wbTex = loadTexture("warmbrown.bmp");
 	initModels();
 	//--------------------------------
 	//	End initialization
