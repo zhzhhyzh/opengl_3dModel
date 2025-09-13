@@ -296,7 +296,13 @@ GLuint loadTexture(LPCSTR filename) {
 	return texture;
 }
 
-
+GLuint goldTex = 0;
+GLuint silverTex = 0;
+GLuint stringTex = 0;
+GLuint redGemTex = 0;
+GLuint blueGemTex = 0;
+GLuint leatherTex = 0;
+GLuint hairTex = 0;
 GLuint bgTex = 0;
 GLuint texSarong = 0;
 GLuint loadTextureBMP(const char* filename) {
@@ -2255,7 +2261,7 @@ void body() {
 // a = half-width (X), b = half-depth (Z)
 	EllipseProfile TORSO[] = {
 		{0.00f, 1.40f, 1.10f},  // lower hip
-		{0, 1.40f, 1.05f},  // upper hip
+		{0, 1.45f, 1.50f},  // upper hip
 		{0.28f, 1.25f, 0.95f},  // waist in
 		{0.45f, 1.55f, 1.15f},  // lower ribs
 		{0.62f, 1.85f, 1.25f},  // chest
@@ -2335,220 +2341,6 @@ void body() {
 
 	// Render all abs pads
 	for (int i = 0;i < ABS_COUNT;i++) placeAbs(abs8[i]);
-
-
-	// === DELTOIDS (shoulders) ===
-	// Place two ellipsoids near the upper chest/shoulder band.
-	// Compute approximate shoulder lateral positions from the profile at yn≈0.78.
-	{
-		float yn = 0.78f;
-		// Interpolate a (half-width) at this height:
-		float a_at = TORSO[0].a;
-		for (int i = 0;i < TORSO_N - 1;++i) if (yn >= TORSO[i].y && yn <= TORSO[i + 1].y) {
-			float t = (yn - TORSO[i].y) / (TORSO[i + 1].y - TORSO[i].y);
-			a_at = TORSO[i].a * (1 - t) + TORSO[i + 1].a * t;
-			break;
-		}
-		float b_at = sampleHalfDepthB(TORSO, TORSO_N, yn);
-		float y = yn * BODY_H;
-
-		// Left deltoid
-		glPushMatrix();
-		if (gWalking) {
-			float pecSway = sinf(gWalkPhase) * 0.05f; // subtle chest sway
-			glTranslatef(pecSway, 0.0f, 0.0f);
-		}
-
-		glTranslatef(-a_at * 0.95f, y, b_at * 0.25f);  // slightly forward
-		//glRotatef(20.0f, 0, 1, 0);
-		glColor3f(SKIN.base[0] * 0.95, SKIN.base[1] * 0.95, SKIN.base[2] * 0.95);
-		drawEllipsoid(0.55f, 0.65f, 0.45f, 28);
-		glPopMatrix();
-
-		// Right deltoid
-		glPushMatrix();
-		if (gWalking) {
-			float pecSway = sinf(gWalkPhase) * 0.05f; // subtle chest sway
-			glTranslatef(pecSway, 0.0f, 0.0f);
-		}
-
-		glTranslatef(+a_at * 0.95f, y, b_at * 0.25f);
-		//glRotatef(-20.0f, 0, 1, 0);
-		glColor3f(SKIN.base[0] * 0.95, SKIN.base[1] * 0.95, SKIN.base[2] * 0.95);
-		drawEllipsoid(0.55f, 0.65f, 0.45f, 28);
-		glPopMatrix();
-
-
-
-		// ===================== RIGHT SHOULDER EPaulette (armor + fringe) =====================
-		{
-			glPushMatrix();
-			glTranslatef(0, 0.5, 0.25);
-			//glRotatef(-5, 1, 0, 0);
-			glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_POLYGON_BIT);
-			//glDisable(GL_TEXTURE_2D);
-
-			// --- placement: a little above/right/forward of the right deltoid
-			const float sx = +a_at * 0.98f;
-			const float sy = y + 0.12f;         // slightly above shoulder
-			const float sz = b_at * 0.10f;      // a tad forward
-
-			// --- overall proportions
-			const float rx_outer = 0.62f;       // ellipse radius across X (outer rim)
-			const float rz_outer = 0.42f;       // ellipse radius along Z (outer rim)
-			const float rim_thick = 0.06f;      // rim thickness outward
-			const float board_t = 0.05f;      // board thickness (vertical)
-			const float dome_h = 0.06f;      // slight crown height
-			const int   N = 24;         // segmentation
-
-			// small helper: make a thin box with quads
-			auto box = [](float x0, float x1, float y0, float y1, float z0, float z1) {
-				glBegin(GL_QUADS);
-				// bottom
-				glVertex3f(x0, y0, z0); glVertex3f(x1, y0, z0); glVertex3f(x1, y1, z0); glVertex3f(x0, y1, z0);
-				// top
-				glVertex3f(x0, y0, z1); glVertex3f(x0, y1, z1); glVertex3f(x1, y1, z1); glVertex3f(x1, y0, z1);
-				// sides
-				glVertex3f(x0, y0, z0); glVertex3f(x0, y0, z1); glVertex3f(x1, y0, z1); glVertex3f(x1, y0, z0);
-				glVertex3f(x1, y0, z0); glVertex3f(x1, y0, z1); glVertex3f(x1, y1, z1); glVertex3f(x1, y1, z0);
-				glVertex3f(x1, y1, z0); glVertex3f(x1, y1, z1); glVertex3f(x0, y1, z1); glVertex3f(x0, y1, z0);
-				glVertex3f(x0, y1, z0); glVertex3f(x0, y1, z1); glVertex3f(x0, y0, z1); glVertex3f(x0, y0, z0);
-				glEnd();
-				};
-
-			glPushMatrix();
-			glTranslatef(sx, sy, sz);
-			//glRotatef(-12.f, 0, 1, 0);    // open a bit to the front
-			//glRotatef(+8.f, 1, 0, 0);    // slight down tilt
-
-			// colors (gold-ish)
-			const GLfloat GOLD[3] = { 0.85f, 0.72f, 0.25f };
-			const GLfloat GOLD_D[3] = { 0.60f, 0.50f, 0.18f };
-
-			// --- (A) top board: a shallow dome made of triangles, sitting on a flat board
-			// flat board slab
-			glColor3fv(GOLD_D);
-			{
-				// make the slab by “ring” walls (outer wall + inner wall) and top/bottom caps with triangles
-				const float rx_in = rx_outer * 0.90f;
-				const float rz_in = rz_outer * 0.90f;
-				const float y0 = 0.0f, y1 = board_t;
-
-				// outer vertical wall
-				for (int i = 0;i < N;i++) {
-					float a0 = (2.f * (float)Gfx::PI / N) * i;
-					float a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
-					float x0 = rx_outer * cosf(a0), z0 = rz_outer * sinf(a0);
-					float x1 = rx_outer * cosf(a1), z1 = rz_outer * sinf(a1);
-					glBegin(GL_QUADS);
-					glVertex3f(x0, y0, z0); glVertex3f(x1, y0, z1); glVertex3f(x1, y1, z1); glVertex3f(x0, y1, z0);
-					glEnd();
-				}
-				// inner vertical wall
-				for (int i = 0;i < N;i++) {
-					float a0 = (2.f * (float)Gfx::PI / N) * i;
-					float a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
-					float x0 = rx_in * cosf(a0), z0 = rz_in * sinf(a0);
-					float x1 = rx_in * cosf(a1), z1 = rz_in * sinf(a1);
-					glBegin(GL_QUADS);
-					glVertex3f(x1, y0, z1); glVertex3f(x0, y0, z0); glVertex3f(x0, y1, z0); glVertex3f(x1, y1, z1);
-					glEnd();
-				}
-				// bottom cap (triangles)
-				glColor3fv(GOLD_D);
-				for (int i = 0;i < N;i++) {
-					float a0 = (2.f * (float)Gfx::PI / N) * i, a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
-					float xo0 = rx_outer * cosf(a0), zo0 = rz_outer * sinf(a0);
-					float xo1 = rx_outer * cosf(a1), zo1 = rz_outer * sinf(a1);
-					float xi0 = rx_in * cosf(a0), zi0 = rz_in * sinf(a0);
-					float xi1 = rx_in * cosf(a1), zi1 = rz_in * sinf(a1);
-					glBegin(GL_TRIANGLES);
-					glVertex3f(xo0, y0, zo0); glVertex3f(xo1, y0, zo1); glVertex3f(xi1, y0, zi1);
-					glVertex3f(xo0, y0, zo0); glVertex3f(xi1, y0, zi1); glVertex3f(xi0, y0, zi0);
-					glEnd();
-				}
-				// top dome (triangles) – rises to y1 + dome_h
-				glColor3fv(GOLD);
-				const float yc = y1 + dome_h;
-				for (int i = 0;i < N;i++) {
-					float a0 = (2.f * (float)Gfx::PI / N) * i, a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
-					float xi0 = rx_in * cosf(a0), zi0 = rz_in * sinf(a0);
-					float xi1 = rx_in * cosf(a1), zi1 = rz_in * sinf(a1);
-					glBegin(GL_TRIANGLES);
-					glVertex3f(0.f, yc, 0.f);
-					glVertex3f(xi1, y1, zi1);
-					glVertex3f(xi0, y1, zi0);
-					glEnd();
-				}
-			}
-
-			// --- (B) bead/rim (raised outer lip)
-			glColor3fv(GOLD);
-			{
-				const float rxo = rx_outer + rim_thick;
-				const float rzo = rz_outer + rim_thick;
-				const float yb0 = board_t * 0.50f, yb1 = yb0 + rim_thick * 0.90f;
-				for (int i = 0;i < N;i++) {
-					float a0 = (2.f * (float)Gfx::PI / N) * i, a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
-					float x0i = rx_outer * cosf(a0), z0i = rz_outer * sinf(a0);
-					float x1i = rx_outer * cosf(a1), z1i = rz_outer * sinf(a1);
-					float x0o = rxo * cosf(a0), z0o = rzo * sinf(a0);
-					float x1o = rxo * cosf(a1), z1o = rzo * sinf(a1);
-					glBegin(GL_QUADS); // outer wall
-					glVertex3f(x0o, yb0, z0o); glVertex3f(x1o, yb0, z1o); glVertex3f(x1o, yb1, z1o); glVertex3f(x0o, yb1, z0o);
-					glEnd();
-					glBegin(GL_QUADS); // inner wall
-					glVertex3f(x1i, yb0, z1i); glVertex3f(x0i, yb0, z0i); glVertex3f(x0i, yb1, z0i); glVertex3f(x1i, yb1, z1i);
-					glEnd();
-					glBegin(GL_QUADS); // top cap
-					glVertex3f(x0i, yb1, z0i); glVertex3f(x1i, yb1, z1i); glVertex3f(x1o, yb1, z1o); glVertex3f(x0o, yb1, z0o);
-					glEnd();
-				}
-			}
-
-			// --- (C) fringe/tassels: narrow boxes hanging along the outer front/side arc
-			glColor3fv(GOLD);
-			const float tass_w = 0.08f;
-			const float tass_t = 0.03f;
-			const float tass_h = 0.72f;
-			for (int i = 2;i <= N - 4;i++) {                 // skip back side so it doesn’t intersect collar
-				float a = (2.f * (float)Gfx::PI / N) * i;
-				// only front/outer quadrant
-				// (angles around ellipse: i from ~2..N-4 covers front/outer)
-				float xo = (rx_outer + rim_thick) * cosf(a);
-				float zo = (rz_outer + rim_thick) * sinf(a);
-				// tangent direction to place local X of tassel
-				float tx = -sinf(a), tz = cosf(a);
-				// build a tiny oriented box with quads
-				float xL = xo - (tass_w * 0.5f) * tx, zL = zo - (tass_w * 0.5f) * tz;
-				float xR = xo + (tass_w * 0.5f) * tx, zR = zo + (tass_w * 0.5f) * tz;
-				float yTop = board_t * 0.60f + rim_thick * 0.90f;
-				float yBot = yTop - tass_h;
-
-				glBegin(GL_QUADS);
-				// front
-				glVertex3f(xL, yBot, zL); glVertex3f(xR, yBot, zR); glVertex3f(xR, yTop, zR); glVertex3f(xL, yTop, zL);
-				// back
-				glVertex3f(xR, yBot, zR); glVertex3f(xL, yBot, zL); glVertex3f(xL, yTop, zL); glVertex3f(xR, yTop, zR);
-				// left side
-				glVertex3f(xL, yBot, zL - tass_t); glVertex3f(xL, yBot, zL); glVertex3f(xL, yTop, zL); glVertex3f(xL, yTop, zL - tass_t);
-				// right side
-				glVertex3f(xR, yBot, zR); glVertex3f(xR, yBot, zR - tass_t); glVertex3f(xR, yTop, zR - tass_t); glVertex3f(xR, yTop, zR);
-				// bottom
-				glVertex3f(xL, yBot, zL); glVertex3f(xR, yBot, zR); glVertex3f(xR, yBot, zR - tass_t); glVertex3f(xL, yBot, zL - tass_t);
-				glEnd();
-			}
-
-			glPopMatrix();
-			glPopAttrib();
-
-			glPopMatrix();
-
-		}
-		// =================== END RIGHT SHOULDER EPaulette ===================
-
-
-	}
 
 	// === OPTIONAL: Guide lines on the torso surface ===
 	// Front center meridian (theta = pi/2), and two oblique hints near the edges
@@ -2672,6 +2464,53 @@ void body() {
 	// ======== END REAL CHEST ========
 
 
+	// === DELTOIDS (shoulders) ===
+	// Place two ellipsoids near the upper chest/shoulder band.
+	// Compute approximate shoulder lateral positions from the profile at yn≈0.78.
+	{
+		float yn = 0.78f;
+		// Interpolate a (half-width) at this height:
+		float a_at = TORSO[0].a;
+		for (int i = 0;i < TORSO_N - 1;++i) if (yn >= TORSO[i].y && yn <= TORSO[i + 1].y) {
+			float t = (yn - TORSO[i].y) / (TORSO[i + 1].y - TORSO[i].y);
+			a_at = TORSO[i].a * (1 - t) + TORSO[i + 1].a * t;
+			break;
+		}
+		float b_at = sampleHalfDepthB(TORSO, TORSO_N, yn);
+		float y = yn * BODY_H;
+
+		// Left deltoid
+		glPushMatrix();
+		if (gWalking) {
+			float pecSway = sinf(gWalkPhase) * 0.05f; // subtle chest sway
+			glTranslatef(pecSway, 0.0f, 0.0f);
+		}
+
+		glTranslatef(-a_at * 0.95f, y, b_at * 0.25f);  // slightly forward
+		//glRotatef(20.0f, 0, 1, 0);
+		glColor3f(SKIN.base[0] * 0.95, SKIN.base[1] * 0.95, SKIN.base[2] * 0.95);
+		drawEllipsoid(0.55f, 0.65f, 0.45f, 28);
+		glPopMatrix();
+
+		// Right deltoid
+		glPushMatrix();
+		if (gWalking) {
+			float pecSway = sinf(gWalkPhase) * 0.05f; // subtle chest sway
+			glTranslatef(pecSway, 0.0f, 0.0f);
+		}
+
+		glTranslatef(+a_at * 0.95f, y, b_at * 0.25f);
+		//glRotatef(-20.0f, 0, 1, 0);
+		glColor3f(SKIN.base[0] * 0.95, SKIN.base[1] * 0.95, SKIN.base[2] * 0.95);
+		drawEllipsoid(0.55f, 0.65f, 0.45f, 28);
+		glPopMatrix();
+
+
+
+
+	}
+
+	
 
 }
 
@@ -2883,13 +2722,19 @@ static void drawTridentGeo(float lengthScale = 1.0f) {
 	// Handle (longer by default)
 	const float handleH = 7.2f * lengthScale;
 	glPushMatrix();
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, blueGemTex);
 	colBlue();
 	quadBox(0.22f, handleH, 0.22f);
 	// leather bands
+	glDisable(GL_TEXTURE_2D);
 	glTranslatef(0, -handleH * 0.42f, 0);
 	for (int i = 0;i < 4;++i) {
 		glTranslatef(0, -0.18f, 0);
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, stringTex);
 		colLeather(); quadBox(0.26f, 0.10f, 0.26f);
+		glDisable(GL_TEXTURE_2D);
 	}
 	glPopMatrix();
 
@@ -2897,15 +2742,26 @@ static void drawTridentGeo(float lengthScale = 1.0f) {
 	glPushMatrix();
 	glTranslatef(0, +handleH * 0.50f, 0);
 	glScalef(1.5, 1, 1);
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, goldTex);
 	colGold(); quadBox(1.10f, 0.36f, 0.70f);
+	glDisable(GL_TEXTURE_2D);
+
 	glTranslatef(0, +0.14f, 0.4);
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, redGemTex);
 	colGem();  quadBox(0.2f, 0.22f, 0.22f);
+	glDisable(GL_TEXTURE_2D);
+
 	glPopMatrix();
 
 	// Head: center spear + 2 big side blades + 2 small inner hooks
 	glPushMatrix();
 	glTranslatef(0, handleH * 0.50f + 0.60f, 0);
 	glRotatef(180, 1, 0, 0);
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, silverTex);
+	colSteel();
 	// center spear
 	centerSpear(2.2f * lengthScale);
 
@@ -2920,7 +2776,7 @@ static void drawTridentGeo(float lengthScale = 1.0f) {
 	glPushMatrix(); glTranslatef(-0.55f, 0.20f, 0);
 	//glRotatef(-25, 0, 1, 0);
 	quadBox(0.12f, 0.60f, 0.12f); glTranslatef(0, -0.30f, 0); triWedgeTip(0.10f, 0.22f, 0.10f); glPopMatrix();
-
+	glDisable(GL_TEXTURE_2D);
 	glPopMatrix();
 }
 
@@ -3557,6 +3413,200 @@ static void drawArmDown(int side)
 
 	if (side < 0) gOffhandActive = false;
 	glPopMatrix();
+
+	//Due to draw -1, there fore it will be like this
+	if (side > 0) {
+		// ===================== LEFT SHOULDER EPaulette (armor + fringe) =====================
+		{
+			glPushMatrix();
+			glTranslatef(-4, 0.5, 0);
+			//glRotatef(-5, 1, 0, 0);
+			glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_POLYGON_BIT);
+			//glDisable(GL_TEXTURE_2D);
+			EllipseProfile TORSO[] = {
+			{0.00f, 1.40f, 1.10f},  // lower hip
+			{0, 1.45f, 1.50f},  // upper hip
+			{0.28f, 1.25f, 0.95f},  // waist in
+			{0.45f, 1.55f, 1.15f},  // lower ribs
+			{0.62f, 1.85f, 1.25f},  // chest
+			{0.78f, 2.05f, 1.30f},  // upper chest / shoulders
+			{0.90f, 1.80f, 1.10f},  // neck taper starts
+			{1.00f, 0.7f, 0.75f}  , // neck base
+			};
+			const int TORSO_N = sizeof(TORSO) / sizeof(TORSO[0]);
+			float yn = 0.78f;
+			// Interpolate a (half-width) at this height:
+			float a_at = TORSO[0].a;
+			for (int i = 0;i < TORSO_N - 1;++i) if (yn >= TORSO[i].y && yn <= TORSO[i + 1].y) {
+				float t = (yn - TORSO[i].y) / (TORSO[i + 1].y - TORSO[i].y);
+				a_at = TORSO[i].a * (1 - t) + TORSO[i + 1].a * t;
+				break;
+			}
+			float b_at = sampleHalfDepthB(TORSO, TORSO_N, yn);
+			float y = yn * BODY_H;
+			// --- placement: a little above/right/forward of the right deltoid
+			const float sx = +a_at * 0.98f;
+			const float sy = y + 0.12f;         // slightly above shoulder
+			const float sz = b_at * 0.10f;      // a tad forward
+
+			// --- overall proportions
+			const float rx_outer = 0.62f;       // ellipse radius across X (outer rim)
+			const float rz_outer = 0.42f;       // ellipse radius along Z (outer rim)
+			const float rim_thick = 0.06f;      // rim thickness outward
+			const float board_t = 0.05f;      // board thickness (vertical)
+			const float dome_h = 0.06f;      // slight crown height
+			const int   N = 24;         // segmentation
+
+			// small helper: make a thin box with quads
+			auto box = [](float x0, float x1, float y0, float y1, float z0, float z1) {
+				glBegin(GL_QUADS);
+				// bottom
+				glVertex3f(x0, y0, z0); glVertex3f(x1, y0, z0); glVertex3f(x1, y1, z0); glVertex3f(x0, y1, z0);
+				// top
+				glVertex3f(x0, y0, z1); glVertex3f(x0, y1, z1); glVertex3f(x1, y1, z1); glVertex3f(x1, y0, z1);
+				// sides
+				glVertex3f(x0, y0, z0); glVertex3f(x0, y0, z1); glVertex3f(x1, y0, z1); glVertex3f(x1, y0, z0);
+				glVertex3f(x1, y0, z0); glVertex3f(x1, y0, z1); glVertex3f(x1, y1, z1); glVertex3f(x1, y1, z0);
+				glVertex3f(x1, y1, z0); glVertex3f(x1, y1, z1); glVertex3f(x0, y1, z1); glVertex3f(x0, y1, z0);
+				glVertex3f(x0, y1, z0); glVertex3f(x0, y1, z1); glVertex3f(x0, y0, z1); glVertex3f(x0, y0, z0);
+				glEnd();
+				};
+
+			glPushMatrix();
+			glTranslatef(sx, sy, sz);
+			//glRotatef(-12.f, 0, 1, 0);    // open a bit to the front
+			//glRotatef(+8.f, 1, 0, 0);    // slight down tilt
+
+			// colors (gold-ish)
+			const GLfloat GOLD[3] = { 0.85f, 0.72f, 0.25f };
+			const GLfloat GOLD_D[3] = { 0.60f, 0.50f, 0.18f };
+
+			// --- (A) top board: a shallow dome made of triangles, sitting on a flat board
+			// flat board slab
+			glEnable(GL_TEXTURE_2D);
+			glBindTexture(GL_TEXTURE_2D, goldTex);
+			glColor3fv(GOLD_D);
+			{
+				// make the slab by “ring” walls (outer wall + inner wall) and top/bottom caps with triangles
+				const float rx_in = rx_outer * 0.90f;
+				const float rz_in = rz_outer * 0.90f;
+				const float y0 = 0.0f, y1 = board_t;
+
+				// outer vertical wall
+				for (int i = 0;i < N;i++) {
+					float a0 = (2.f * (float)Gfx::PI / N) * i;
+					float a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
+					float x0 = rx_outer * cosf(a0), z0 = rz_outer * sinf(a0);
+					float x1 = rx_outer * cosf(a1), z1 = rz_outer * sinf(a1);
+					glBegin(GL_QUADS);
+					glVertex3f(x0, y0, z0); glVertex3f(x1, y0, z1); glVertex3f(x1, y1, z1); glVertex3f(x0, y1, z0);
+					glEnd();
+				}
+				// inner vertical wall
+				for (int i = 0;i < N;i++) {
+					float a0 = (2.f * (float)Gfx::PI / N) * i;
+					float a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
+					float x0 = rx_in * cosf(a0), z0 = rz_in * sinf(a0);
+					float x1 = rx_in * cosf(a1), z1 = rz_in * sinf(a1);
+					glBegin(GL_QUADS);
+					glVertex3f(x1, y0, z1); glVertex3f(x0, y0, z0); glVertex3f(x0, y1, z0); glVertex3f(x1, y1, z1);
+					glEnd();
+				}
+				// bottom cap (triangles)
+				glColor3fv(GOLD_D);
+				for (int i = 0;i < N;i++) {
+					float a0 = (2.f * (float)Gfx::PI / N) * i, a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
+					float xo0 = rx_outer * cosf(a0), zo0 = rz_outer * sinf(a0);
+					float xo1 = rx_outer * cosf(a1), zo1 = rz_outer * sinf(a1);
+					float xi0 = rx_in * cosf(a0), zi0 = rz_in * sinf(a0);
+					float xi1 = rx_in * cosf(a1), zi1 = rz_in * sinf(a1);
+					glBegin(GL_TRIANGLES);
+					glVertex3f(xo0, y0, zo0); glVertex3f(xo1, y0, zo1); glVertex3f(xi1, y0, zi1);
+					glVertex3f(xo0, y0, zo0); glVertex3f(xi1, y0, zi1); glVertex3f(xi0, y0, zi0);
+					glEnd();
+				}
+				// top dome (triangles) – rises to y1 + dome_h
+				glColor3fv(GOLD);
+				const float yc = y1 + dome_h;
+				for (int i = 0;i < N;i++) {
+					float a0 = (2.f * (float)Gfx::PI / N) * i, a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
+					float xi0 = rx_in * cosf(a0), zi0 = rz_in * sinf(a0);
+					float xi1 = rx_in * cosf(a1), zi1 = rz_in * sinf(a1);
+					glBegin(GL_TRIANGLES);
+					glVertex3f(0.f, yc, 0.f);
+					glVertex3f(xi1, y1, zi1);
+					glVertex3f(xi0, y1, zi0);
+					glEnd();
+				}
+			}
+
+			// --- (B) bead/rim (raised outer lip)
+			glColor3fv(GOLD);
+			{
+				const float rxo = rx_outer + rim_thick;
+				const float rzo = rz_outer + rim_thick;
+				const float yb0 = board_t * 0.50f, yb1 = yb0 + rim_thick * 0.90f;
+				for (int i = 0;i < N;i++) {
+					float a0 = (2.f * (float)Gfx::PI / N) * i, a1 = (2.f * (float)Gfx::PI / N) * (i + 1);
+					float x0i = rx_outer * cosf(a0), z0i = rz_outer * sinf(a0);
+					float x1i = rx_outer * cosf(a1), z1i = rz_outer * sinf(a1);
+					float x0o = rxo * cosf(a0), z0o = rzo * sinf(a0);
+					float x1o = rxo * cosf(a1), z1o = rzo * sinf(a1);
+					glBegin(GL_QUADS); // outer wall
+					glVertex3f(x0o, yb0, z0o); glVertex3f(x1o, yb0, z1o); glVertex3f(x1o, yb1, z1o); glVertex3f(x0o, yb1, z0o);
+					glEnd();
+					glBegin(GL_QUADS); // inner wall
+					glVertex3f(x1i, yb0, z1i); glVertex3f(x0i, yb0, z0i); glVertex3f(x0i, yb1, z0i); glVertex3f(x1i, yb1, z1i);
+					glEnd();
+					glBegin(GL_QUADS); // top cap
+					glVertex3f(x0i, yb1, z0i); glVertex3f(x1i, yb1, z1i); glVertex3f(x1o, yb1, z1o); glVertex3f(x0o, yb1, z0o);
+					glEnd();
+				}
+			}
+
+			// --- (C) fringe/tassels: narrow boxes hanging along the outer front/side arc
+			glColor3fv(GOLD);
+			const float tass_w = 0.08f;
+			const float tass_t = 0.03f;
+			const float tass_h = 0.72f;
+			for (int i = 2;i <= N - 4;i++) {                 // skip back side so it doesn’t intersect collar
+				float a = (2.f * (float)Gfx::PI / N) * i;
+				// only front/outer quadrant
+				// (angles around ellipse: i from ~2..N-4 covers front/outer)
+				float xo = (rx_outer + rim_thick) * cosf(a);
+				float zo = (rz_outer + rim_thick) * sinf(a);
+				// tangent direction to place local X of tassel
+				float tx = -sinf(a), tz = cosf(a);
+				// build a tiny oriented box with quads
+				float xL = xo - (tass_w * 0.5f) * tx, zL = zo - (tass_w * 0.5f) * tz;
+				float xR = xo + (tass_w * 0.5f) * tx, zR = zo + (tass_w * 0.5f) * tz;
+				float yTop = board_t * 0.60f + rim_thick * 0.90f;
+				float yBot = yTop - tass_h;
+
+				glBegin(GL_QUADS);
+				// front
+				glVertex3f(xL, yBot, zL); glVertex3f(xR, yBot, zR); glVertex3f(xR, yTop, zR); glVertex3f(xL, yTop, zL);
+				// back
+				glVertex3f(xR, yBot, zR); glVertex3f(xL, yBot, zL); glVertex3f(xL, yTop, zL); glVertex3f(xR, yTop, zR);
+				// left side
+				glVertex3f(xL, yBot, zL - tass_t); glVertex3f(xL, yBot, zL); glVertex3f(xL, yTop, zL); glVertex3f(xL, yTop, zL - tass_t);
+				// right side
+				glVertex3f(xR, yBot, zR); glVertex3f(xR, yBot, zR - tass_t); glVertex3f(xR, yTop, zR - tass_t); glVertex3f(xR, yTop, zR);
+				// bottom
+				glVertex3f(xL, yBot, zL); glVertex3f(xR, yBot, zR); glVertex3f(xR, yBot, zR - tass_t); glVertex3f(xL, yBot, zL - tass_t);
+				glEnd();
+			}
+
+			glPopMatrix();
+			glDisable(GL_TEXTURE_2D);
+			glPopAttrib();
+
+			glPopMatrix();
+
+		}
+		// =================== END RIGHT SHOULDER EPaulette ===================
+
+	}
 }
 
 
@@ -3622,7 +3672,9 @@ static void drawFoot(int side /*-1 left, +1 right*/) {
 	// ==================== Roman Caligae (GL_QUADS only) ====================
 	{
 		glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_POLYGON_BIT);
-		glDisable(GL_TEXTURE_2D);
+		glEnable(GL_NORMALIZE);
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, leatherTex);
 		// Leather look
 		glColor3f(0.35f, 0.22f, 0.15f);
 		glPushMatrix();
@@ -3640,15 +3692,24 @@ static void drawFoot(int side /*-1 left, +1 right*/) {
 		auto boxQuads = [](float x0, float x1, float y0, float y1, float z0, float z1)
 			{
 				glBegin(GL_QUADS);
-				// bottom
+				// bottom (−Z)
+				glNormal3f(0, 0, -1);
 				glVertex3f(x0, y0, z0); glVertex3f(x1, y0, z0); glVertex3f(x1, y1, z0); glVertex3f(x0, y1, z0);
-				// top
+				// top (+Z)
+				glNormal3f(0, 0, +1);
 				glVertex3f(x0, y0, z1); glVertex3f(x0, y1, z1); glVertex3f(x1, y1, z1); glVertex3f(x1, y0, z1);
-				// sides
+				// +Y side
+				glNormal3f(0, +1, 0);
+				glVertex3f(x0, y1, z0); glVertex3f(x1, y1, z0); glVertex3f(x1, y1, z1); glVertex3f(x0, y1, z1);
+				// −Y side
+				glNormal3f(0, -1, 0);
 				glVertex3f(x0, y0, z0); glVertex3f(x0, y0, z1); glVertex3f(x1, y0, z1); glVertex3f(x1, y0, z0);
+				// +X side
+				glNormal3f(+1, 0, 0);
 				glVertex3f(x1, y0, z0); glVertex3f(x1, y0, z1); glVertex3f(x1, y1, z1); glVertex3f(x1, y1, z0);
-				glVertex3f(x1, y1, z0); glVertex3f(x1, y1, z1); glVertex3f(x0, y1, z1); glVertex3f(x0, y1, z0);
-				glVertex3f(x0, y1, z0); glVertex3f(x0, y1, z1); glVertex3f(x0, y0, z1); glVertex3f(x0, y0, z0);
+				// −X side
+				glNormal3f(-1, 0, 0);
+				glVertex3f(x0, y0, z0); glVertex3f(x0, y1, z0); glVertex3f(x0, y1, z1); glVertex3f(x0, y0, z1);
 				glEnd();
 			};
 
@@ -3732,38 +3793,50 @@ static void drawFoot(int side /*-1 left, +1 right*/) {
 				const float rOut = rIn + WIDTH * 0.10f;
 				const float zTop = zBase + THICK * 0.10f;
 
-				for (int i = 0;i < N;i++) {
-					float a0 = (float)i * (2.0f * (float)Gfx::PI / N);
-					float a1 = (float)(i + 1) * (2.0f * (float)Gfx::PI / N);
+				for (int i = 0; i < N; ++i) {
+					float a0 = (float)i * (2.f * (float)Gfx::PI / N);
+					float a1 = (float)(i + 1) * (2.f * (float)Gfx::PI / N);
+					float am = 0.5f * (a0 + a1);
 
-					float x0i = rIn * cosf(a0), x1i = rIn * cosf(a1);
-					float y0i = rIn * sinf(a0), y1i = rIn * sinf(a1);
-					float x0o = rOut * cosf(a0), x1o = rOut * cosf(a1);
-					float y0o = rOut * sinf(a0), y1o = rOut * sinf(a1);
+					float c0 = cosf(a0), s0 = sinf(a0);
+					float c1 = cosf(a1), s1 = sinf(a1);
+					float cm = cosf(am), sm = sinf(am);
 
-					// shift to ankle center
-					y0i += yCenter; y1i += yCenter; y0o += yCenter; y1o += yCenter;
+					float x0i = rIn * c0, x1i = rIn * c1;
+					float y0i = rIn * s0 + yCenter, y1i = rIn * s1 + yCenter;
+					float x0o = rOut * c0, x1o = rOut * c1;
+					float y0o = rOut * s0 + yCenter, y1o = rOut * s1 + yCenter;
 
 					glBegin(GL_QUADS);
-					// outer wall
+					// outer wall (normal points outward ~ radial)
+					glNormal3f(cm, sm, 0);
 					glVertex3f(x0o, y0o, zBase); glVertex3f(x1o, y1o, zBase);
 					glVertex3f(x1o, y1o, zTop); glVertex3f(x0o, y0o, zTop);
-					// inner wall
+
+					// inner wall (normal points inward)
+					glNormal3f(-cm, -sm, 0);
 					glVertex3f(x1i, y1i, zBase); glVertex3f(x0i, y0i, zBase);
 					glVertex3f(x0i, y0i, zTop); glVertex3f(x1i, y1i, zTop);
-					// top
-					glVertex3f(x0i, y0i, zTop); glVertex3f(x1i, y1i, zTop);
-					glVertex3f(x1o, y1o, zTop); glVertex3f(x0o, y0o, zTop);
-					// bottom
+
+					// top (+Z)
+					glNormal3f(0, 0, +1);
+					glVertex3f(x0i, y0i, zTop);  glVertex3f(x1i, y1i, zTop);
+					glVertex3f(x1o, y1o, zTop);  glVertex3f(x0o, y0o, zTop);
+
+					// bottom (−Z)
+					glNormal3f(0, 0, -1);
 					glVertex3f(x0o, y0o, zBase); glVertex3f(x1o, y1o, zBase);
 					glVertex3f(x1i, y1i, zBase); glVertex3f(x0i, y0i, zBase);
 					glEnd();
 				}
 			};
+
 		// positions a bit above instep, nearer to ankle
 		ankleBand(STRAP_Z1 + THICK * 0.40f, Y0 + LEN * 0.02f);
 		ankleBand(STRAP_Z1 + THICK * 0.58f, Y0 + LEN * 0.02f);
 		glPopMatrix();
+		glDisable(GL_TEXTURE_2D);
+
 		glPopAttrib();
 	}
 	// ================= end Roman Caligae =================
@@ -3905,9 +3978,12 @@ static void drawLegDown(int side, float& outPelvisY, float& outPelvisA, float& o
 	// --- shin / calf (hinges correctly off knee sphere now) ---
 	drawCapsuleDownY(CALF_R0, CALF_R1, SHIN_LEN * 0.55f);
 	//Knee Protector panel
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, silverTex);
 	glColor3f(0.5, 0.5, 0.5);
 	drawSarongPanel(/*halfW*/0.33f, /*len*/THIGH_LEN * 0.45f, /*halfT*/0.33f);
 	// restore skin color for the leg
+	glDisable(GL_TEXTURE_2D);
 	glColor3f(SKIN.base[0], SKIN.base[1], SKIN.base[2]);
 	glTranslatef(0, -(SHIN_LEN * 0.55f), 0);
 	drawCapsuleDownY(CALF_R1, ANKLE_R * 0.95f, SHIN_LEN * 0.45f);
@@ -4015,14 +4091,20 @@ static void drawSarongHuggingTorso(float pelvisY)
 	float legSwingR = fabsf(sinf(gWalkPhase + 5.14159f)) * gHipAmpDeg; // right hip forward
 	float swingMax = fmaxf(legSwingL, legSwingR);
 
-	// scale bottom ellipse outward when legs apart
-	float squatExpand = 1.0f + 0.01f * (gThighDegTorso / 80.0f);
-	aBot *= squatExpand;
-	bBot *= squatExpand * 1.45;
+	float expand = 0;
+	if (gSquatted) {
+		expand = 1.0f + 0.01f * (gThighDegTorso / 80.0f);
+	}
+	else {
+		expand = 1.0f + 0.015f * swingMax;
+	}
+	
+	aBot *= expand;
+	bBot *= expand * 1.45;
 
 	// draw sarong frustum
 	glPushMatrix();
-	glScalef(1.2, 1, 1);
+	glScalef(1.2, 1, 1.2);
 	drawEllipticFrustum(yTop, yBot, aTop, bTop, aBot, bBot, 72);
 	glPopMatrix();
 
@@ -4035,13 +4117,13 @@ static void drawSarongHuggingTorso(float pelvisY)
 		glPushMatrix();
 		glTranslated(0,-0.3,0);
 		glRotatef(180, 1, 0, 0);
-		glScalef(1, 0.4, 1.15);
+		glScalef(1.8, 0.4, 2);
 
-		drawHalfSphere( aTop * 1.5, 36, 36);
+		drawHalfSphere( aTop , 36, 36);
 
 		glPopMatrix();
 		glScalef(1, 0.5, 1.7);
-		drawEllipticFrustum(yTop, yBot, aTop * 1.5, bTop, aBot * 0.8, bBot * 0.8, 72);
+		drawEllipticFrustum(yTop, yBot, aTop * 1.75, bTop*1.2, aBot * 0.8, bBot * 0.8, 72);
 		
 		glPopMatrix();
 	}
@@ -4292,6 +4374,8 @@ static void drawHairLobe(float L1, float L2, float L3,
 void drawPoseidonHairLobes(float RX, float RY, float RZ)
 {
 	glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LIGHTING_BIT);
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, hairTex);
 	hairColor();
 
 	// ---------- 0) Hair cap (soft base volume) ----------
@@ -4512,7 +4596,6 @@ void drawPoseidonHairLobes(float RX, float RY, float RZ)
 		glEnd();
 		glPopMatrix();
 	}
-
 	glPopAttrib();
 }
 // ===== Beard helpers (quads & tris only) =====
@@ -5032,6 +5115,8 @@ void head() {
 
 	// ================= King Crown (triangles) =================
 	glPushMatrix();
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, goldTex);
 	glColor3f(1.00f, 0.84f, 0.00f);                  // gold
 	// sit just above the hair line
 	glTranslatef(0.0f, SKULL_RY * 0.95f, 0.0f);
@@ -5042,6 +5127,7 @@ void head() {
 	// parameters: innerR, thickness, bandHeight, spikeHeight
 	drawCrownGLT(/*r*/1.00f, /*t*/0.12f, /*bh*/0.35f, /*sh*/0.65f,
 		/*slices*/60, /*step*/6);
+	glDisable(GL_TEXTURE_2D);
 	glPopMatrix();
 
 	glPopMatrix(); // root at torso neck
@@ -5097,6 +5183,14 @@ void poseidon() {
 
 	glTranslatef(txwhole, tywhole, tzwhole);
 
+	
+	glPushMatrix();
+	glTranslatef(0, -gSquatThigh, -gSquatThigh);
+	glRotatef(gBowAngle, 1, 0, 0);   // rotate forward around X
+	glRotatef(gSquatDegTorso, 1, 0, 0);
+
+	head();
+
 	switch (change) {
 	case 1:
 		textureArr[0] = loadTexture("a.bmp");
@@ -5111,14 +5205,6 @@ void poseidon() {
 		textureArr[3] = loadTexture("d.bmp");
 		break;
 	}
-	glPushMatrix();
-	glTranslatef(0, -gSquatThigh, -gSquatThigh);
-	glRotatef(gBowAngle, 1, 0, 0);   // rotate forward around X
-	glRotatef(gSquatDegTorso, 1, 0, 0);
-
-	head();
-
-
 	body();
 
 	glPushMatrix();
@@ -5306,6 +5392,13 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	initQuadric();
 	bgTex = loadTextureBMP("sea.bmp");
 	texSarong = loadTexture("sarong.bmp");
+	redGemTex = loadTexture("redgem.bmp");
+	blueGemTex = loadTexture("bluegem.bmp");
+	hairTex = loadTexture("hair.bmp");
+	goldTex = loadTexture("gold.bmp");
+	silverTex = loadTexture("silver.bmp");
+	stringTex = loadTexture("string.bmp");
+	leatherTex = loadTexture("leather.bmp");
 	initModels();
 	//--------------------------------
 	//	End initialization
