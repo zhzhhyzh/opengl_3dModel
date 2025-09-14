@@ -129,12 +129,19 @@ float breathAmp = 0.02f;          // amplitude of chest expansion
 
 float gWristSpin = 0.0f;
 bool  gWristSpinActive = false;
+
 float gElbowBend = 0.0f;
 bool gElbowBent = false;
 bool gElbowAnimating = false;
+
 float gShoulderOpen = 0.0f;
 bool gShoulderAnimating = false;
 bool gShoulderOpened = false;   // state: false = normal, true = opened outward
+
+float gShoulderUp = 0.0f;
+bool gShoulderUpAnimating = false;
+bool gShoulderUped = false;   // state: false = normal, true = opened outward
+
 float gHeadAngle = 0.0f;
 bool gHeadAnimating = false;
 bool gHeadHorizontal = true;  // toggle: true = horizontal, false = vertical
@@ -163,7 +170,7 @@ bool gJumped = false;
 float gDragonBobPhase = 0.0f;      // controls up-down wave
 int gDragonMode = 0;       // 0 = flat, 1 = bobbing, 2 = tilted
 
-int gComboPhase = 0;  // 0=idle, 1=squat, 2=jump, 3=air actions, 4=land, 5=bow
+int gComboPhase = 0;  // 0=idle, 1=squat, 2=jump, 3=air actions, 4=shoulder up, 5=land, 6 =bow
 
 bool gWireframeMode = false;
 
@@ -526,7 +533,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			walkAnkleRollL = walkAnkleRollR = 0.0f;
 
 			//Number pad animation
-			gElbowBend = gShoulderOpen = gBowAngle = gSquatDegTorso = gSquatThigh = gThighDegTorso = 0;
+			gElbowBend = gShoulderOpen = gBowAngle = gSquatDegTorso = gSquatThigh = gThighDegTorso = gShoulderUp=  0;
 
 			gBowed = gSquatted = false;
 
@@ -634,7 +641,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
  }
 		else if (wParam == 'B') {
 			if (gWpnState == WPN_ON_BACK) {
-				gWpnState = WPN_EQUIP_ANIM; gWpnTimer = 0;gElbowBend = 0;gShoulderOpen
+				gWpnState = WPN_EQUIP_ANIM; gWpnTimer = 0;gElbowBend = 0;gShoulderOpen = gShoulderUp
 					= 0;gSquatAnimating = true;gSquatted = false;
 
 				walkHipPitchL =
@@ -647,7 +654,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 					walkShoulderSwingR = 0;
 			}
 			else {
-				gWpnState = WPN_ON_BACK; gWaterTrail.clear(); gElbowBend = 0;gShoulderOpen
+				gWpnState = WPN_ON_BACK; gWaterTrail.clear(); gElbowBend = 0;gShoulderOpen = gShoulderUp
 					= 0;gSquatAnimating = true;gSquatted = false;
 			}
 		}
@@ -717,7 +724,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			}
 		}
 		else if (wParam == '2') {
-			if (gWpnState != WPN_IN_HAND) {
+			if (gWpnState != WPN_IN_HAND && !(gShoulderUped)) {
 				if (!gElbowAnimating) {   // only trigger if not already animating
 					gElbowAnimating = true;
 					gElbowBent = !gElbowBent;   // toggle state
@@ -725,15 +732,23 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			}
 		}
 		else if (wParam == '3') {
-			if (gWpnState != WPN_IN_HAND) {
+			if (gWpnState != WPN_IN_HAND && !gShoulderUped) {
 				if (!gShoulderAnimating) {
 					gShoulderAnimating = true;
 					gShoulderOpened = !gShoulderOpened;  // toggle state
 				}
 			}
-		}
-
+			}
 		else if (wParam == '4') {
+				if (gWpnState != WPN_IN_HAND && !gShoulderOpened) {
+					if (!gShoulderUpAnimating) {
+						gShoulderUpAnimating = true;
+						gShoulderUped = !gShoulderUped;  // toggle state
+					}
+				}
+				}
+
+		else if (wParam == '5') {
 			if (!gHeadAnimating) {
 				gHeadAnimating = true;
 				gHeadAngle = 0.0f;
@@ -741,20 +756,20 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 				gHeadDirection = 1;
 			}
 		}
-		else if (wParam == '5') {
+		else if (wParam == '6') {
 			gMarching = true;
 			gMarchAngle = 0.0f;
 			gMarchTime = 0.0f;
 		}
 
-		else if (wParam == '6') {
+		else if (wParam == '7') {
 			if (!gSquatAnimating && !gBowed) {
 				gSquatAnimating = true;
 				gSquatted = !gSquatted;   // toggle state
 			}
 		}
 
-		else if (wParam == '7') {
+		else if (wParam == '8') {
 			if (!gJumping && !gSquatAnimating && !gBowed) {
 				// crouch first
 				gSquatAnimating = true;
@@ -764,10 +779,11 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 				gJumpTime = 0.0f;
 			}
 		}
-		else if (wParam == '8') {
+		else if (wParam == '9') {
 			if (gWpnState != WPN_IN_HAND && !gSquatted) {
 				gElbowBend = 0;
 				gShoulderOpen = 0;
+				gShoulderUp = 0;
 				if (!gBowAnimating) {
 					gBowAnimating = true;
 					gBowed = !gBowed;   // toggle state
@@ -775,12 +791,12 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			}
 		}
 
-		else if (wParam == '9') {
+		else if (wParam == '0') {
 			gDragonMode = (gDragonMode + 1) % 3; // cycle through 0,1,2
 			gDragonBobPhase = 0.0f;
 		}
 
-		else if (wParam == '0') {
+		else if (wParam == VK_OEM_MINUS) {
 			gWireframeMode = !gWireframeMode;
 			showModelLines = false;
 
@@ -1319,84 +1335,6 @@ static void renderBullets() {
 static void updateWeapon(float dt) {
 	// Equip pop
 	if (gWpnState == WPN_EQUIP_ANIM) { gWpnTimer += dt; if (gWpnTimer > 0.20f) { gWpnState = WPN_IN_HAND; gWpnTimer = 0; } return; }
-	// ===== Z : Jump → Up-thrust → Down-slam =====
-	//if (gWpnState == WPN_Z_COMBO) {
-	//	gWpnTimer += dt;
-
-	//	const float tPrep = 0.18f;   // crouch
-	//	const float tRise = 0.28f;   // jump
-	//	const float tHang = 0.18f;   // apex
-	//	const float tFall = 0.30f;   // slam
-	//	const float T = tPrep + tRise + tHang + tFall;
-
-	//	float t = gWpnTimer;
-	//	float Y = zJumpStartY;
-
-	//	// === Motion profile ===
-	//	if (t < tPrep) {
-	//		// crouch (dip + bend knees)
-	//		float u = t / tPrep;
-	//		Y = zJumpStartY - lerp(0.0f, 0.22f, u);
-	//		actKneeFlexL = actKneeFlexR = lerp(0, 18, u);
-	//		actHipPitchL = actHipPitchR = lerp(0, +8, u);
-	//		actTorsoPitch = lerp(0, +12, u);
-	//		// left hand is forward (higher on shaft)
-	//		actLShoulderPitch += 10.0f;
-	//		actLElbowFlex += 6.0f;
-
-	//		// right hand lower (back grip)
-	//		actRShoulderPitch -= 5.0f;
-	//		actRElbowFlex += 4.0f;
-
-	//	}
-	//	else if (t < tPrep + tRise) {
-	//		// rise (extend legs, lift trident)
-	//		float u = (t - tPrep) / tRise;
-	//		Y = zJumpStartY - 0.22f + lerp(0.0f, 1.85f, u * u);
-	//		actKneeFlexL = actKneeFlexR = lerp(18, 0, u);
-	//		actHipPitchL = actHipPitchR = lerp(+8, -2, u);
-	//		actTorsoPitch = lerp(+12, -4, u);
-	//		actRShoulderPitch += lerp(+28, +110, u);   // right hand lower grip
-	//		actLShoulderPitch += lerp(+38, +120, u);   // left hand slightly higher grip
-
-	//	}
-	//	else if (t < tPrep + tRise + tHang) {
-	//		// brief apex (hold overhead)
-	//		Y = zJumpStartY + 1.63f;
-	//		actTorsoPitch = -6.0f;
-	//		actRShoulderPitch = actLShoulderPitch = +540.0f;
-	//	}
-	//	else if (t < T) {
-	//		// fall (slam down)
-	//		float u = (t - (tPrep + tRise + tHang)) / tFall;
-	//		Y = zJumpStartY + 1.63f - lerp(0.0f, 1.75f, u * u);
-
-	//		actTorsoPitch = lerp(-6, +26, u);
-	//		actKneeFlexL = actKneeFlexR = lerp(0, +20, u);   // absorb landing
-	//		actRShoulderPitch = actLShoulderPitch = lerp(+540, +640, u);
-
-	//		if (u > 0.92f && !zImpactSpawned) {
-	//			zImpactSpawned = true;
-	//			gImpactTimer = 0.28f; // shockwave
-	//		}
-	//	}
-	//	else {
-	//		// land & finish
-	//		yPosition = GROUND_Y;
-	//		gWpnState = WPN_IN_HAND;
-	//		gWpnTimer = 0.0f;
-	//		zImpactSpawned = false;
-	//		computeActionPose(); // reset to idle
-	//		return;
-	//	}
-
-	//	// update Y position and recompute full pose
-	//	yPosition = Y;
-	//	computeActionPose();
-	//	return;
-	//}
-
-
 	// X
 	if (gWpnState == WPN_X_CHARGING) { gWpnTimer += dt; gWpnCharge = min(1.0f, gWpnCharge + dt * 1.2f); return; }
 	if (gWpnState == WPN_X_SWEEP) { gWpnTimer += dt; if (gWpnTimer > 0.58f) { gWpnState = WPN_IN_HAND; gWpnTimer = 0; gWpnCharge = 0; } return; }
@@ -1690,14 +1628,44 @@ void action() {
 					}
 				}
 
-				// while in air → rotate wrist & bend elbows
-				gElbowAnimating = true;
-				gElbowBent = true;
+				
+				gShoulderUpAnimating = true;
+				gShoulderUped = true;
 			}
 			break;
 
 		case 4: // land
 			if (!gJumping) {
+				// elbow bends once when landing
+				
+				if (gShoulderUpAnimating) {
+					if (gShoulderUped) {
+						gShoulderUp += 4;
+						if (gShoulderUp >= 180.0f) {
+							gShoulderUp = 180.0f;
+							gShoulderUped = false;
+							gWristSpinActive = true;
+
+						}
+					}
+
+					else {
+						// moving back down (target 0°)
+						gShoulderUp -= 10.0f;
+						if (gShoulderUp <= 0.0f) {
+							gShoulderUp = 0.0f;
+							gComboPhase = 5; // next: bow
+
+							gShoulderUpAnimating = false;
+							// while in air → rotate wrist & bend elbows
+							gElbowAnimating = true;
+							gElbowBent = true;
+						}
+					}
+				}
+			}
+			break;
+		case 5: // land
 				// elbow bends once when landing
 				if (gElbowAnimating) {
 					if (gElbowBent) {
@@ -1705,7 +1673,7 @@ void action() {
 						if (gElbowBend >= 90.0f) {
 							gElbowBend = 90.0f;
 							gElbowBent = false;
-							gWristSpinActive = true;
+							//gWristSpinActive = true;
 
 						}
 					}
@@ -1716,17 +1684,17 @@ void action() {
 						if (gElbowBend <= 0.0f) {
 							gElbowBend = 0.0f;
 							gBowed = true;
-							gComboPhase = 5; // next: bow
+							gComboPhase = 6; // next: bow
 							gBowAnimating = true;
 
 							gElbowAnimating = false;
 						}
 					}
 				}
-			}
+				
 			break;
 
-		case 5: // bow
+		case 6: // bow
 			if (gBowAnimating) {
 				if (gBowed) {
 					gBowAngle += 3.0f;
@@ -1842,6 +1810,25 @@ void action() {
 			if (gShoulderOpen <= 0.0f) {
 				gShoulderOpen = 0.0f;
 				gShoulderAnimating = false;
+			}
+		}
+	}
+
+	if (gShoulderUpAnimating && gWpnState != WPN_Z_COMBO) {
+		if (gShoulderUped) {
+			// move outward (target 60°)
+			gShoulderUp += 2.0f;
+			if (gShoulderUp >= (!gElbowBent? 180.0f: 120.0f)) {
+				gShoulderUp = (!gElbowBent ? 180.0f : 120.0f);
+				gShoulderUpAnimating = false;
+			}
+		}
+		else {
+			// move back down (target 0°)
+			gShoulderUp -= 2.0f;
+			if (gShoulderUp <= 0.0f) {
+				gShoulderUp = 0.0f;
+				gShoulderUpAnimating = false;
 			}
 		}
 	}
@@ -3319,6 +3306,14 @@ static void drawArmDown(int side)
 		glRotatef(-gShoulderOpen, 0, 0, 1);   // outward from torso
 
 	}
+	if (side > 0) {
+		glRotatef(+gShoulderUp, 0, 0, 1);   // outward from torso
+
+	}
+	else {
+		glRotatef(-gShoulderUp, 0, 0, 1);   // outward from torso
+
+	}
 	// ---------- UPPER ARM ----------
 	tubeSectionQuads(SLICES, UPPER_LEN * 0.45f,
 		HUM_RX0 * 1.05f, HUM_RZ0 * 1.08f,
@@ -3422,6 +3417,7 @@ static void drawArmDown(int side)
 		// ===================== RIGHT SHOULDER EPaulette (armor + fringe) =====================
 		{
 			glPushMatrix();
+
 			glTranslatef(0, 0.5, 0);
 			//glRotatef(-5, 1, 0, 0);
 			glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_POLYGON_BIT);
@@ -3477,6 +3473,11 @@ static void drawArmDown(int side)
 
 			glPushMatrix();
 			glTranslatef(sx, sy, sz);
+			if (gShoulderUp / 2 > 45) {
+				glTranslatef(-0.5, 0, 0);
+			}
+			glRotatef(+gShoulderUp / 2, 0, 0, 1);
+
 			//glRotatef(-12.f, 0, 1, 0);    // open a bit to the front
 			//glRotatef(+8.f, 1, 0, 0);    // slight down tilt
 
