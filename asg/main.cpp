@@ -2480,6 +2480,9 @@ void body() {
 		//glRotatef(20.0f, 0, 1, 0);
 		glColor3f(SKIN.base[0] * 0.95, SKIN.base[1] * 0.95, SKIN.base[2] * 0.95);
 		drawEllipsoid(0.55f, 0.65f, 0.45f, 28);
+		glTranslatef(0 , -0.08,0);  // slightly forward
+		glColor3f(0, 0, 0);
+		drawEllipsoid(0.5f, 0.65f, 0.35f, 6);
 		glPopMatrix();
 
 		// Right deltoid
@@ -2493,6 +2496,10 @@ void body() {
 		//glRotatef(-20.0f, 0, 1, 0);
 		glColor3f(SKIN.base[0] * 0.95, SKIN.base[1] * 0.95, SKIN.base[2] * 0.95);
 		drawEllipsoid(0.55f, 0.65f, 0.45f, 28);
+		glColor3f(0, 0, 0);
+		glTranslatef(0, -0.08, 0);  // slightly forward
+
+		drawEllipsoid(0.5f, 0.65f, 0.35f, 6);
 		glPopMatrix();
 
 
