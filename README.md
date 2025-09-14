@@ -49,14 +49,15 @@ It has multiple modes that can be switched dynamically during gameplay.
 | **Keyboard Input** | **Description** |
 |---------------------|-----------------|
 | **1** | Rotates the wrist (no weapon equipped). |
-| **2** | Moves elbow joint up/down (no weapon equipped). |
-| **3** | Moves shoulder joint up/down (no weapon equipped). |
-| **4** | Head animation: odd presses = horizontal shake, even presses = vertical shake. |
-| **5** | Marches on the ground. |
-| **6** | Squats down / stand up (no bow or weapon equipped). |
-| **7** | Jump action: squat → jump → land (no bow or squat active). |
-| **8** | Bow action, press again to return to normal (no weapon equipped). |
-| **9** | Switches orbit rotation modes (3 total). |
+| **2** | Moves elbow joint up/down (no weapon equipped and No Shoulder joint up 180Deg). |
+| **3** | Moves shoulder joint up/down 90Deg (no weapon equipped). |
+| **4** | Moves shoulder joint up/down 180Deg OR 120Deg (no weapon equipped). |
+| **5** | Head animation: odd presses = horizontal shake, even presses = vertical shake. |
+| **6** | Marches on the ground. |
+| **7** | Squats down / stand up (no bow or weapon equipped). |
+| **8** | Jump action: squat → jump → land (no bow or squat active). |
+| **9** | Bow action, press again to return to normal (no weapon equipped). |
+| **0** | Switches orbit rotation modes (3 total). |
 
 ---
 
@@ -78,7 +79,7 @@ It has multiple modes that can be switched dynamically during gameplay.
 |---------------------|-----------------|
 | **N** | Cycles through 5 textures: Normal → Army Style → Wooden → Brick → Army Style 2. |
 | **V** | Equips armor (body and hand). Press again to unequip. Disabled if wireframe is active. |
-| **0** | Enables **wireframe mode**, showing only the structural lines of the model. |
+| **-** | Enables **wireframe mode**, showing only the structural lines of the model. |
 
 ---
 
