@@ -796,7 +796,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			gDragonBobPhase = 0.0f;
 		}
 
-		else if (wParam == VK_OEM_MINUS) {
+		else if (wParam == VK_OEM_MINUS) { // Dash or minus key '-'
 			gWireframeMode = !gWireframeMode;
 			showModelLines = false;
 
