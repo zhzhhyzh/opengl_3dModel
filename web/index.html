@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Poseidon - 3D Character Project</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0c1445 0%, #1a237e 50%, #0d47a1 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        header {
+            text-align: center;
+            padding: 3rem 0;
+        }
+        h1 {
+            font-size: 3rem;
+            background: linear-gradient(90deg, #64b5f6, #e1bee7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        .subtitle { font-size: 1.2rem; color: #90caf9; }
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin: 3rem 0;
+        }
+        .gallery img {
+            width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            transition: transform 0.3s;
+        }
+        .gallery img:hover { transform: scale(1.03); }
+        .gallery figure { text-align: center; }
+        .gallery figcaption {
+            margin-top: 0.8rem;
+            color: #90caf9;
+            font-size: 1rem;
+        }
+        .features {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+        .features h2 { color: #64b5f6; margin-bottom: 1rem; }
+        .features ul {
+            list-style: none;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 0.8rem;
+        }
+        .features li::before { content: "\1F52E "; }
+        .controls {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+        .controls h2 { color: #64b5f6; margin-bottom: 1rem; }
+        .controls table { width: 100%; border-collapse: collapse; }
+        .controls th, .controls td {
+            padding: 0.5rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .controls th { color: #90caf9; }
+        .controls kbd {
+            background: rgba(255,255,255,0.15);
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-family: monospace;
+        }
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            color: #64b5f6;
+        }
+        footer a { color: #e1bee7; text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>OpenGL Poseidon</h1>
+            <p class="subtitle">A 3D character rendering project featuring Poseidon with dynamic animations, lighting, and interactive controls</p>
+        </header>
+
+        <div class="gallery">
+            <figure>
+                <img src="front.png" alt="Front view of Poseidon character">
+                <figcaption>Front View</figcaption>
+            </figure>
+            <figure>
+                <img src="back.png" alt="Back view of Poseidon character">
+                <figcaption>Back View</figcaption>
+            </figure>
+            <figure>
+                <img src="weapon.png" alt="Poseidon's Trident weapon">
+                <figcaption>Trident Weapon</figcaption>
+            </figure>
+        </div>
+
+        <div class="features">
+            <h2>Features</h2>
+            <ul>
+                <li>WASD character movement with walking animations</li>
+                <li>Joint-based animation system (shoulder, elbow, wrist, head)</li>
+                <li>Trident weapon equip, attack, and projectile system</li>
+                <li>Dynamic lighting with 6-direction focus control</li>
+                <li>Multiple texture variations with cycling</li>
+                <li>Orthographic and perspective projection modes</li>
+                <li>Mouse-based camera rotation and zoom</li>
+                <li>Orbiting visual effects</li>
+                <li>Audio effects for actions and ambiance</li>
+                <li>Wireframe rendering mode</li>
+            </ul>
+        </div>
+
+        <div class="controls">
+            <h2>Controls</h2>
+            <table>
+                <tr><th>Key</th><th>Action</th></tr>
+                <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Move character</td></tr>
+                <tr><td><kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd></td><td>Weapon actions (charge, swing, projectile)</td></tr>
+                <tr><td><kbd>1</kbd>-<kbd>5</kbd></td><td>Cycle textures</td></tr>
+                <tr><td><kbd>L</kbd></td><td>Toggle lighting</td></tr>
+                <tr><td><kbd>O</kbd>/<kbd>P</kbd></td><td>Orthographic/Perspective view</td></tr>
+                <tr><td><kbd>Space</kbd></td><td>Reset scene</td></tr>
+                <tr><td>Mouse drag</td><td>Camera rotation</td></tr>
+            </table>
+        </div>
+
+        <footer>
+            <p>Built with OpenGL, GLUT & C++ | <a href="https://github.com/zhzhhyzh/opengl_poseidon">View on GitHub</a></p>
+        </footer>
+    </div>
+</body>
+</html>
